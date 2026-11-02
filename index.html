@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>運動軌跡卡</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="運動軌跡卡">
+<meta name="theme-color" content="#1E3A2B">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;800&family=Barlow+Condensed:wght@500;600;800&family=Oswald:wght@500;700&family=Bebas+Neue&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
@@ -1283,7 +1288,7 @@ function showSaveSheet(blob){
 $('saveClose').addEventListener('click', () => { $('saveSheet').hidden = true; URL.revokeObjectURL($('saveImg').src); $('saveImg').removeAttribute('src'); });
 
 /* ---------------- Garmin relay (Cloudflare Worker) ---------------- */
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.1.1';
 const GM_CFG_KEY = 'trace-card-garmin';      // {url, key} — this device only, never in git
 const GM_IMPORTED_KEY = 'trace-card-imported'; // activityIds already loaded
 const GM_IMPORTED_MAX = 2000;

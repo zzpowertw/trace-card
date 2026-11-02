@@ -1,0 +1,15 @@
+{
+  "name": "運動軌跡卡",
+  "short_name": "軌跡卡",
+  "description": "把 Garmin 活動做成 IG 限動卡片",
+  "start_url": "./",
+  "scope": "./",
+  "display": "browser",
+  "background_color": "#1E3A2B",
+  "theme_color": "#1E3A2B",
+  "icons": [
+    {"src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

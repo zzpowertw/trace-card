@@ -5,6 +5,10 @@
 - 次版本（1.**x**.0）：新增功能，舊用法不受影響
 - 主版本（**x**.0.0）：不相容的大改
 
+## [1.1.1] - 2026-11-02
+### 修正
+- 加到手機主畫面時沒有圖示、只顯示一個字：新增 App 圖示（`icons/`）、`manifest.webmanifest`、apple-touch-icon 和網頁小圖示。
+
 ## [1.1.0] - 2026-11-02
 ### 新增
 - 「從 Garmin 抓取」按鈕：透過 Cloudflare Worker 中繼站，直接從 Garmin Personal API 列出最近活動並下載原始 .fit 檔，下載後走原本的 FIT 解析流程。

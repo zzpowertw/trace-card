@@ -1,0 +1,23 @@
+# 運動軌跡卡 — Garmin 中繼站
+# 金鑰和密碼「不要」寫在這裡，請用 Cloudflare 後台或 `wrangler secret put` 設定：
+#   GARMIN_API_KEY  Garmin Personal API 金鑰
+#   ACCESS_KEY      自訂的存取密碼（網頁「Garmin」分頁填同一組）
+
+name = "trace-card-garmin"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[vars]
+# 只允許你的 GitHub Pages 網址呼叫（逗號分隔多個）。留空字串 = 允許所有來源。
+ALLOWED_ORIGINS = "https://zzpowertw.github.io"
+
+# 每小時第 7 分鐘先抓一次最近 30 天的活動
+[triggers]
+crons = ["7 * * * *"]
+
+# KV：快取 token 和活動清單。
+# 在 Cloudflare 後台「Storage & Databases → KV」建立一個 namespace，
+# 把它的 ID 貼到下面，再把三行前面的 # 拿掉。KV 的 ID 不是機密，可以放在 git 裡。
+# [[kv_namespaces]]
+# binding = "TRACE_KV"
+# id = "貼上你的 KV namespace ID"

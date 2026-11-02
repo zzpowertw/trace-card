@@ -1,0 +1,1460 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>運動軌跡卡</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;800&family=Barlow+Condensed:wght@500;600;800&family=Oswald:wght@500;700&family=Bebas+Neue&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Layout: one-screen tool — preview stage (sticky) beside a tabbed control panel; stacks on phones */
+:root{
+  --bg:#ECEFEA; --panel:#FFFFFF; --fg:#1A201C; --muted:#5D6A61; --line:#D3D9D2;
+  --accent:#2E6A47; --accent-fg:#FFFFFF; --chip:#E2E7E1; --danger:#B3402E;
+  --checker-a:#7F8681; --checker-b:#979D98;
+  --ui:"Barlow","Noto Sans TC",system-ui,sans-serif;
+  --num:"Barlow Condensed","Noto Sans TC",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111512; --panel:#1A1F1B; --fg:#E5EBE6; --muted:#97A49A; --line:#2D352F;
+  --accent:#7DC597; --accent-fg:#0D1A12; --chip:#242B26; --danger:#EE8A77;
+  --checker-a:#3A403C; --checker-b:#4A514C; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111512; --panel:#1A1F1B; --fg:#E5EBE6; --muted:#97A49A; --line:#2D352F;
+  --accent:#7DC597; --accent-fg:#0D1A12; --chip:#242B26; --danger:#EE8A77;
+  --checker-a:#3A403C; --checker-b:#4A514C; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--fg);font-family:var(--ui);font-size:15px;line-height:1.45}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 390px;gap:20px;max-width:1280px;margin:0 auto;
+  padding-block:16px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.stage{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);align-self:start;display:flex;flex-direction:column;gap:10px;min-width:0}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.act-name{flex:1;min-width:0;font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.canvas-wrap{height:calc(100svh - 190px);min-height:320px;display:flex;align-items:center;justify-content:center}
+#cv{max-width:100%;max-height:100%;width:auto;height:auto;touch-action:none;cursor:grab;border-radius:6px;
+  background:repeating-conic-gradient(var(--checker-a) 0 25%,var(--checker-b) 0 50%) 0 0/22px 22px;box-shadow:0 1px 0 var(--line)}
+#cv.dragging{cursor:grabbing}
+.note{font-size:13px;padding:8px 12px;border-radius:6px;background:var(--chip);color:var(--fg)}
+.status{font-size:13px;color:var(--muted);min-height:1.2em}
+.status.err{color:var(--danger)}
+.selbar{display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel)}
+.selbar.on{border-color:var(--accent)}
+.selbar b{font-size:13px;font-weight:500;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.selbar.on b{color:var(--fg);font-weight:600}
+.selbar{flex-wrap:wrap}
+.selbar b{flex:1}
+.selbar input[type=range]{flex:1;min-width:80px}
+.btn.toggle[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.alignbar{flex-basis:100%;display:flex;gap:12px}
+.alignbar .ag{display:flex;gap:4px;flex:3}
+.alignbar .ag:last-child{flex:2}
+.alignbar button{flex:1;min-width:0;height:34px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--fg);cursor:pointer;padding:0}
+.alignbar button:hover:not(:disabled){border-color:var(--muted)}
+.alignbar button:disabled{opacity:.35;cursor:default}
+.alignbar svg{width:18px;height:18px}
+.alignbar svg path{fill:none;stroke:currentColor;stroke-width:1.5}
+.alignbar svg rect{fill:currentColor;opacity:.75}
+@media (max-width:860px){
+  .app{grid-template-columns:minmax(0,1fr);gap:12px}
+  .stage{top:env(safe-area-inset-top,0px);z-index:3;background:var(--bg);padding-block:8px;margin-top:-8px}
+  .canvas-wrap{height:40svh;min-height:230px}
+  .act-name{order:9;flex-basis:100%}
+  #exportBtn{margin-left:auto}
+}
+
+.btn{font:600 14px/1 var(--ui);padding:10px 14px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+.btn.small{padding:6px 10px;font-size:13px}
+.btn:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,label.btn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;min-width:0;align-self:start}
+.tabs{display:grid;grid-template-columns:repeat(5,1fr);border-bottom:1px solid var(--line)}
+.tabs button{font:600 14px var(--ui);padding:12px 4px;background:none;border:0;border-bottom:2px solid transparent;color:var(--muted);cursor:pointer}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent)}
+.pane{padding:16px;display:flex;flex-direction:column;gap:18px}
+.group{display:flex;flex-direction:column;gap:8px}
+.group>h3{margin:0;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.row>label.grow,.row>.grow{flex:1;min-width:0}
+input[type=text],select{font:15px var(--ui);padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:100%}
+input[type=range]{accent-color:var(--accent);width:100%}
+input[type=checkbox]{accent-color:var(--accent);width:18px;height:18px;margin:0}
+input[type=color]{width:38px;height:34px;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--bg)}
+.check{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px}
+.seg{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.seg button{flex:1;font:500 13px var(--ui);padding:8px 6px;background:var(--panel);color:var(--fg);border:0;border-right:1px solid var(--line);cursor:pointer;white-space:nowrap}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.summary{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:14px}
+.summary dt{color:var(--muted)}.summary dd{margin:0;font-family:var(--num);font-size:16px;font-variant-numeric:tabular-nums}
+.stats{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:6px}
+.stats li{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;align-items:center;padding:7px 8px 7px 10px;border-bottom:1px solid var(--line)}
+.stats li:last-child{border-bottom:0}
+.stats li.na{opacity:.45}
+.stats .v{font-family:var(--num);font-size:15px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.stats .mv{display:flex;gap:2px}
+.stats .mv button{width:30px;height:28px;border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:4px;cursor:pointer;font-size:13px}
+.presets{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.presets button{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);cursor:pointer;font:500 13px var(--ui)}
+.presets button[aria-pressed="true"]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.presets svg{width:44px;height:64px}
+.presets svg .t{fill:var(--muted)}.presets svg .r{fill:none;stroke:var(--accent);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.presets svg .f{fill:none;stroke:var(--line);stroke-width:1.5}
+.swatches{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.swatches button{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);cursor:pointer;padding:0}
+.swatches button[aria-pressed="true"]{border-color:var(--fg);box-shadow:0 0 0 2px var(--panel) inset}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.lbl{font-size:14px;display:flex;justify-content:space-between;gap:8px}
+.lbl output{font-family:var(--num);color:var(--muted);font-variant-numeric:tabular-nums}
+.sheet{position:fixed;inset:0;z-index:10;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);
+  padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.sheet-card{background:var(--panel);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:12px;align-items:center;max-width:520px;max-height:100%;min-width:0}
+.sheet-tip{margin:0;font-size:14px}
+.sheet-card img{max-height:60svh;width:auto;max-width:100%;border-radius:4px;background:repeating-conic-gradient(var(--checker-a) 0 25%,var(--checker-b) 0 50%) 0 0/16px 16px;-webkit-touch-callout:default}
+@media (prefers-reduced-motion:no-preference){.btn,.seg button,.presets button{transition:border-color .15s,background-color .15s}}
+/* Garmin */
+input[type=url],input[type=password],.pw input{font:15px var(--ui);padding:9px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);width:100%}
+.field{display:flex;flex-direction:column;gap:4px;font-size:14px}
+.pw{position:relative;display:flex}
+.pw input{padding-right:46px}
+.pw button{position:absolute;right:2px;top:2px;bottom:2px;width:42px;border:0;border-radius:5px;background:transparent;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.pw button:hover{color:var(--fg)}
+.pw svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.gm-card{width:min(560px,100%);align-items:stretch;max-height:min(720px,100%)}
+.gm-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.gm-head h2{margin:0;font-size:17px;flex:1}
+.gm-list{list-style:none;margin:0;padding:0;overflow:auto;border:1px solid var(--line);border-radius:6px;min-height:120px;flex:1}
+.gm-list li{border-bottom:1px solid var(--line)}
+.gm-list li:last-child{border-bottom:0}
+.gm-list button{display:grid;grid-template-columns:1fr auto;gap:2px 10px;width:100%;text-align:left;padding:10px 12px;border:0;background:none;color:var(--fg);cursor:pointer;font:inherit}
+.gm-list button:hover{background:var(--chip)}
+.gm-list button:disabled{opacity:.5;cursor:wait}
+.gm-list .n{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.gm-list .m{grid-column:1/-1;font-size:13px;color:var(--muted);font-family:var(--num);font-variant-numeric:tabular-nums}
+.gm-list .tag{font-size:12px;padding:2px 8px;border-radius:10px;background:var(--chip);color:var(--muted);align-self:center;white-space:nowrap}
+.gm-list .tag.new{background:var(--accent);color:var(--accent-fg)}
+.gm-empty{padding:20px 12px;text-align:center;color:var(--muted);font-size:14px}
+.gm-foot{display:flex;gap:8px;flex-wrap:wrap;justify-content:space-between;align-items:center}
+.ver{font-size:12px;color:var(--muted);margin:0;text-align:right}
+</style>
+<style>body{margin:0}</style>
+</head>
+<body>
+
+<div class="app">
+  <section class="stage" aria-label="預覽">
+    <div class="bar">
+      <label class="btn" for="fitIn">載入活動檔</label>
+      <input id="fitIn" type="file" accept=".fit,.zip,application/zip,application/octet-stream" hidden>
+      <button id="gmOpen" class="btn" type="button">從 Garmin 抓取</button>
+      <span id="actName" class="act-name"></span>
+      <button id="exportBtn" class="btn primary" type="button">匯出 PNG</button>
+    </div>
+    <div id="sampleNote" class="note">目前顯示的是範例資料。點「載入活動檔」選擇 Garmin Connect 匯出的 .fit 或 .zip。</div>
+    <div class="canvas-wrap"><canvas id="cv" width="1080" height="1920" aria-label="活動卡片預覽"></canvas></div>
+    <div id="selBar" class="selbar">
+      <b id="selName">點一下預覽中的物件，就能拖曳或調整大小</b>
+      <input id="selSize" type="range" min="0.2" max="4" step="0.01" aria-label="物件大小">
+      <button id="selMulti" class="btn small toggle" type="button" aria-pressed="false">多選</button>
+      <button id="selHide" class="btn small" type="button">隱藏</button>
+      <div id="alignBar" class="alignbar" role="toolbar" aria-label="對齊">
+        <div class="ag">
+          <button type="button" data-a="left" title="靠左對齊" aria-label="靠左對齊"><svg viewBox="0 0 18 18"><path d="M2 1v16"/><rect x="4" y="4" width="11" height="3"/><rect x="4" y="11" width="7" height="3"/></svg></button>
+          <button type="button" data-a="hcenter" title="水平置中" aria-label="水平置中"><svg viewBox="0 0 18 18"><path d="M9 1v16"/><rect x="3.5" y="4" width="11" height="3"/><rect x="5.5" y="11" width="7" height="3"/></svg></button>
+          <button type="button" data-a="right" title="靠右對齊" aria-label="靠右對齊"><svg viewBox="0 0 18 18"><path d="M16 1v16"/><rect x="3" y="4" width="11" height="3"/><rect x="7" y="11" width="7" height="3"/></svg></button>
+        </div>
+        <div class="ag">
+          <button type="button" data-a="top" title="靠上對齊" aria-label="靠上對齊"><svg viewBox="0 0 18 18"><path d="M1 2h16"/><rect x="4" y="4" width="3" height="11"/><rect x="11" y="4" width="3" height="7"/></svg></button>
+          <button type="button" data-a="vcenter" title="垂直置中" aria-label="垂直置中"><svg viewBox="0 0 18 18"><path d="M1 9h16"/><rect x="4" y="3.5" width="3" height="11"/><rect x="11" y="5.5" width="3" height="7"/></svg></button>
+          <button type="button" data-a="bottom" title="靠下對齊" aria-label="靠下對齊"><svg viewBox="0 0 18 18"><path d="M1 16h16"/><rect x="4" y="3" width="3" height="11"/><rect x="11" y="7" width="3" height="7"/></svg></button>
+        </div>
+        <div class="ag">
+          <button type="button" data-a="dh" title="水平均分" aria-label="水平均分"><svg viewBox="0 0 18 18"><path d="M1.5 2v14M16.5 2v14"/><rect x="4.5" y="5" width="3" height="8"/><rect x="10.5" y="5" width="3" height="8"/></svg></button>
+          <button type="button" data-a="dv" title="垂直均分" aria-label="垂直均分"><svg viewBox="0 0 18 18"><path d="M2 1.5h14M2 16.5h14"/><rect x="5" y="4.5" width="8" height="3"/><rect x="5" y="10.5" width="8" height="3"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <div id="status" class="status" role="status"></div>
+  </section>
+
+  <section class="panel" aria-label="設定">
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tab-data" data-tab="data" aria-selected="true">數據</button>
+      <button type="button" role="tab" id="tab-layout" data-tab="layout" aria-selected="false">排版</button>
+      <button type="button" role="tab" id="tab-style" data-tab="style" aria-selected="false">樣式</button>
+      <button type="button" role="tab" id="tab-bg" data-tab="bg" aria-selected="false">背景</button>
+      <button type="button" role="tab" id="tab-garmin" data-tab="garmin" aria-selected="false">Garmin</button>
+    </div>
+
+    <div class="pane" data-pane="data">
+      <div class="group">
+        <h3>活動</h3>
+        <dl id="summary" class="summary"></dl>
+      </div>
+      <div class="group">
+        <h3>顯示的數據</h3>
+        <ul id="statList" class="stats"></ul>
+        <p class="hint">用箭頭調整順序。灰色的項目在這個活動檔裡沒有資料。</p>
+      </div>
+      <div class="group">
+        <h3>其他物件</h3>
+        <label class="check"><input id="showRoute" type="checkbox"> 路線</label>
+        <label class="check"><input id="showElev" type="checkbox"> 海拔剖面</label>
+        <label class="check"><input id="showDate" type="checkbox"> 日期</label>
+        <label class="grow">標題<input id="titleIn" type="text" placeholder="例如：武嶺挑戰"></label>
+        <label class="grow">頁尾文字<input id="footerIn" type="text" placeholder="例如：你的名字或 IG 帳號"></label>
+      </div>
+      <div class="group">
+        <h3>移動時間計算方式</h3>
+        <div class="seg" id="movingSeg"><button type="button" data-v="auto">依速度自動計算</button><button type="button" data-v="timer">手錶計時時間</button></div>
+        <p id="movingHint" class="hint"></p>
+      </div>
+      <div class="group">
+        <h3>標籤語言與時間格式</h3>
+        <div class="seg" id="langSeg"><button type="button" data-v="en">English</button><button type="button" data-v="zh">中文</button></div>
+        <div class="seg" id="timeSeg"><button type="button" data-v="colon">3:34:42</button><button type="button" data-v="hm">3h 34m</button></div>
+      </div>
+    </div>
+
+    <div class="pane" data-pane="layout" hidden>
+      <div class="group">
+        <h3>畫布比例</h3>
+        <div class="seg" id="sizeSeg">
+          <button type="button" data-v="story">9:16</button><button type="button" data-v="portrait">4:5</button><button type="button" data-v="square">1:1</button><button type="button" data-v="photo">照片比例</button>
+        </div>
+      </div>
+      <div class="group">
+        <h3>預設排版</h3>
+        <div class="presets" id="presetGrid">
+          <button type="button" data-v="stack"><svg viewBox="0 0 44 64"><rect class="f" x="1" y="1" width="42" height="62" rx="3"/><rect class="t" x="14" y="9" width="16" height="3"/><rect class="t" x="11" y="15" width="22" height="5"/><rect class="t" x="14" y="24" width="16" height="3"/><rect class="t" x="11" y="30" width="22" height="5"/><path class="r" d="M16 52c-4-6 6-12 10-8s4 10-2 10-4-2-8-2"/></svg>置中堆疊</button>
+          <button type="button" data-v="grid"><svg viewBox="0 0 44 64"><rect class="f" x="1" y="1" width="42" height="62" rx="3"/><rect class="t" x="5" y="12" width="9" height="4"/><rect class="t" x="16" y="12" width="9" height="4"/><rect class="t" x="5" y="20" width="9" height="4"/><rect class="t" x="16" y="20" width="9" height="4"/><rect class="t" x="5" y="28" width="9" height="4"/><rect class="t" x="16" y="28" width="9" height="4"/><path class="r" d="M30 12l8 4-2 10-6 6-2-10z"/></svg>左側資訊</button>
+          <button type="button" data-v="bottom"><svg viewBox="0 0 44 64"><rect class="f" x="1" y="1" width="42" height="62" rx="3"/><path class="r" d="M10 30c0-14 22-18 24-6s-10 12-14 8-4-6-10-2"/><rect class="t" x="5" y="46" width="9" height="5"/><rect class="t" x="17" y="46" width="9" height="5"/><rect class="t" x="29" y="46" width="9" height="5"/></svg>路線在上</button>
+          <button type="button" data-v="minimal"><svg viewBox="0 0 44 64"><rect class="f" x="1" y="1" width="42" height="62" rx="3"/><path class="r" d="M14 34c-2-10 14-14 16-6s-6 8-9 6"/><rect class="t" x="7" y="44" width="8" height="3"/><rect class="t" x="18" y="44" width="8" height="3"/><rect class="t" x="29" y="44" width="8" height="3"/></svg>極簡</button>
+        </div>
+        <p id="manualNote" class="hint"></p>
+      </div>
+      <div class="group">
+        <h3>對齊與均分</h3>
+        <div class="seg" id="alignToSeg"><button type="button" data-v="sel">對齊選取的物件</button><button type="button" data-v="canvas">對齊畫布</button></div>
+        <div class="row"><button id="selectAll" class="btn small" type="button">全選</button></div>
+        <p class="hint">用預覽下方的按鈕對齊。只選一個物件時一定對齊畫布，選多個時依照上面的設定。對齊畫布時會保留一點邊距。「均分」在「對齊選取的物件」模式要選 3 個以上，在「對齊畫布」模式 2 個以上即可。</p>
+        <p class="hint">多選方式：手機點「多選」後逐一點物件；電腦按住 Shift 或 Ctrl 點選，或按 Ctrl+A 全選。</p>
+      </div>
+      <div class="group">
+        <h3>手動排版</h3>
+        <p class="hint">在預覽上直接拖曳任何物件，靠近中線時會自動對齊。點一下物件後可以在預覽下方調整大小或隱藏；電腦上也可以用滑鼠滾輪縮放、用方向鍵微調位置（按住 Shift 移動較多）。</p>
+        <div class="row"><button id="resetLayout" class="btn small" type="button">恢復預設排版</button></div>
+      </div>
+    </div>
+
+    <div class="pane" data-pane="style" hidden>
+      <div class="group">
+        <h3>字型</h3>
+        <select id="fontSel" aria-label="字型"></select>
+      </div>
+      <div class="group">
+        <h3>文字顏色</h3>
+        <div class="swatches" id="textSw"></div>
+        <label class="lbl">標籤透明度 <output id="labelAlphaOut"></output></label>
+        <input id="labelAlpha" type="range" min="0.3" max="1" step="0.05">
+      </div>
+      <div class="group">
+        <h3>路線顏色</h3>
+        <div class="swatches" id="lineSw"></div>
+        <label class="lbl">線條粗細 <output id="lineWOut"></output></label>
+        <input id="lineW" type="range" min="2" max="24" step="1">
+        <label class="check"><input id="dots" type="checkbox"> 標示起點與終點</label>
+      </div>
+      <div class="group">
+        <h3>可讀性</h3>
+        <label class="check"><input id="shadow" type="checkbox"> 文字與線條陰影（放在照片上時較清楚）</label>
+      </div>
+    </div>
+
+    <div class="pane" data-pane="bg" hidden>
+      <div class="group">
+        <h3>背景</h3>
+        <div class="seg" id="bgSeg"><button type="button" data-v="transparent">透明</button><button type="button" data-v="color">純色</button><button type="button" data-v="photo">照片</button></div>
+        <p class="hint">透明背景匯出成 PNG 後，可以在 Instagram 限動或其他 App 疊在照片上。</p>
+      </div>
+      <div class="group" id="bgColorGroup">
+        <h3>背景顏色</h3>
+        <div class="swatches" id="bgSw"></div>
+      </div>
+      <div class="group" id="photoGroup">
+        <h3>照片</h3>
+        <div class="row">
+          <label class="btn small" for="photoIn">選擇照片</label>
+          <input id="photoIn" type="file" accept="image/*" hidden>
+          <button id="photoClear" class="btn small" type="button">移除照片</button>
+        </div>
+        <label class="lbl">縮放 <output id="zoomOut"></output></label>
+        <input id="zoom" type="range" min="1" max="3" step="0.01">
+        <label class="lbl">照片變暗 <output id="dimOut"></output></label>
+        <input id="dim" type="range" min="0" max="0.7" step="0.05">
+        <p class="hint">在預覽的空白處拖曳可以移動照片位置。想讓畫布跟照片一樣比例，到「排版」選「照片比例」。</p>
+      </div>
+    </div>
+
+    <div class="pane" data-pane="garmin" hidden>
+      <div class="group">
+        <h3>中繼站設定</h3>
+        <label class="field">中繼站網址
+          <input id="gmUrl" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://trace-card-garmin.你的帳號.workers.dev">
+        </label>
+        <div class="field"><label for="gmKey">存取密碼</label>
+          <div class="pw">
+            <input id="gmKey" type="password" autocomplete="off" spellcheck="false" placeholder="Worker 裡設定的 ACCESS_KEY">
+            <button id="gmKeyEye" type="button" aria-label="顯示密碼" aria-pressed="false" title="顯示密碼">
+              <svg id="eyeOn" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+              <svg id="eyeOff" viewBox="0 0 24 24" hidden><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a10 10 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="row"><button id="gmTest" class="btn small" type="button">測試連線</button></div>
+        <p id="gmTestOut" class="hint" role="status"></p>
+        <p class="hint">網址和密碼只存在這台裝置的瀏覽器裡，不會上傳到 GitHub。換手機或電腦時要重新填一次。</p>
+      </div>
+      <div class="group">
+        <h3>已匯入的活動</h3>
+        <p id="gmImportedOut" class="hint"></p>
+        <div class="row"><button id="gmClearImported" class="btn small" type="button">清除匯入紀錄</button></div>
+      </div>
+      <p id="appVer" class="ver"></p>
+    </div>
+  </section>
+</div>
+
+<div id="saveSheet" class="sheet" hidden role="dialog" aria-label="儲存圖片">
+  <div class="sheet-card">
+    <p class="sheet-tip">手機：長按圖片，選「儲存到照片」或「下載圖片」。電腦：在圖片上按右鍵，選「另存圖片」。</p>
+    <img id="saveImg" alt="匯出的活動卡片">
+    <button id="saveClose" class="btn primary" type="button">關閉</button>
+  </div>
+</div>
+
+<div id="gmSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="gmTitle">
+  <div class="sheet-card gm-card">
+    <div class="gm-head">
+      <h2 id="gmTitle">從 Garmin 抓取活動</h2>
+      <div class="seg" id="gmDays"><button type="button" data-v="7">7 天</button><button type="button" data-v="30">30 天</button><button type="button" data-v="90">90 天</button></div>
+    </div>
+    <p id="gmMsg" class="hint" role="status"></p>
+    <ul id="gmList" class="gm-list"></ul>
+    <div class="gm-foot">
+      <div class="row">
+        <button id="gmLatest" class="btn small primary" type="button">載入最新的未匯入活動</button>
+        <button id="gmReload" class="btn small" type="button">重新整理</button>
+      </div>
+      <button id="gmClose" class="btn small" type="button">關閉</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+/* ---------------- FIT parsing ---------------- */
+const FIT_EPOCH = 631065600;
+const BT_SIZE = {0:1,1:1,2:1,3:2,4:2,5:4,6:4,7:1,8:4,9:8,10:1,11:2,12:4,13:1,14:8,15:8,16:8};
+const td = new TextDecoder('utf-8');
+
+function readField(dv, p, size, bt, le){
+  const t = bt & 0x1f;
+  if (t === 7){
+    const bytes = new Uint8Array(dv.buffer, dv.byteOffset + p, size);
+    let n = bytes.indexOf(0); if (n < 0) n = size;
+    return td.decode(bytes.subarray(0, n)) || null;
+  }
+  const ts = BT_SIZE[t] || 1;
+  if (size < ts) return null;
+  let v;
+  switch (t){
+    case 0: case 2: case 13: v = dv.getUint8(p); return v === 0xFF ? null : v;
+    case 10: v = dv.getUint8(p); return v === 0 ? null : v;
+    case 1: v = dv.getInt8(p); return v === 0x7F ? null : v;
+    case 3: v = dv.getInt16(p, le); return v === 0x7FFF ? null : v;
+    case 4: v = dv.getUint16(p, le); return v === 0xFFFF ? null : v;
+    case 11: v = dv.getUint16(p, le); return v === 0 ? null : v;
+    case 5: v = dv.getInt32(p, le); return v === 0x7FFFFFFF ? null : v;
+    case 6: v = dv.getUint32(p, le); return v === 0xFFFFFFFF ? null : v;
+    case 12: v = dv.getUint32(p, le); return v === 0 ? null : v;
+    case 8: v = dv.getFloat32(p, le); return Number.isFinite(v) ? v : null;
+    case 9: v = dv.getFloat64(p, le); return Number.isFinite(v) ? v : null;
+    case 14: v = dv.getBigInt64(p, le); return v === 0x7FFFFFFFFFFFFFFFn ? null : Number(v);
+    case 15: v = dv.getBigUint64(p, le); return v === 0xFFFFFFFFFFFFFFFFn ? null : Number(v);
+    case 16: v = dv.getBigUint64(p, le); return v === 0n ? null : Number(v);
+  }
+  return null;
+}
+
+function parseFit(buf){
+  const dv = new DataView(buf);
+  const out = {sessions:[], records:[], activity:null, sport:null};
+  let pos = 0;
+  while (pos + 12 <= buf.byteLength){
+    const hs = dv.getUint8(pos);
+    const dataSize = dv.getUint32(pos + 4, true);
+    const sig = String.fromCharCode(dv.getUint8(pos+8), dv.getUint8(pos+9), dv.getUint8(pos+10), dv.getUint8(pos+11));
+    if (sig !== '.FIT') { if (pos === 0) throw new Error('這不是有效的 FIT 檔。'); break; }
+    let p = pos + hs;
+    const end = Math.min(p + dataSize, buf.byteLength);
+    const defs = {};
+    let lastTs = 0;
+    while (p < end){
+      const h = dv.getUint8(p++);
+      let local, cts = null;
+      if (h & 0x80){
+        local = (h >> 5) & 3;
+        const off = h & 0x1f;
+        cts = lastTs + ((off - lastTs) & 0x1f);
+        lastTs = cts;
+      } else if (h & 0x40){
+        local = h & 0x0f;
+        const hasDev = h & 0x20;
+        p++; // reserved
+        const le = dv.getUint8(p++) === 0;
+        const gnum = dv.getUint16(p, le); p += 2;
+        const n = dv.getUint8(p++);
+        const fields = [];
+        for (let i = 0; i < n; i++){ fields.push([dv.getUint8(p), dv.getUint8(p+1), dv.getUint8(p+2)]); p += 3; }
+        let devSize = 0;
+        if (hasDev){ const nd = dv.getUint8(p++); for (let i = 0; i < nd; i++){ devSize += dv.getUint8(p+1); p += 3; } }
+        defs[local] = {gnum, le, fields, devSize};
+        continue;
+      } else {
+        local = h & 0x0f;
+      }
+      const d = defs[local];
+      if (!d) throw new Error('FIT 檔內容不完整，無法讀取。');
+      const m = {};
+      for (const [num, size, bt] of d.fields){ m[num] = readField(dv, p, size, bt, d.le); p += size; }
+      p += d.devSize;
+      if (m[253] != null) lastTs = m[253]; else if (cts != null) m[253] = cts;
+      handleMsg(out, d.gnum, m);
+    }
+    pos = end + 2;
+  }
+  return out;
+}
+
+const SC = 180 / 2147483648;
+function handleMsg(out, g, m){
+  if (g === 20){
+    const alt = m[78] != null ? m[78] / 5 - 500 : (m[2] != null ? m[2] / 5 - 500 : null);
+    out.records.push({
+      t: m[253], lat: m[0] != null ? m[0] * SC : null, lon: m[1] != null ? m[1] * SC : null, alt,
+      dist: m[5] != null ? m[5] / 100 : null,
+      spd: (m[73] ?? m[6]) != null ? (m[73] ?? m[6]) / 1000 : null
+    });
+  } else if (g === 18) out.sessions.push(m);
+  else if (g === 34) out.activity = m;
+  else if (g === 12 && !out.sport) out.sport = m;
+}
+
+function buildActivity(f, name){
+  const ss = f.sessions;
+  if (!ss.length && !f.records.length) throw new Error('這個檔案裡找不到活動紀錄。');
+  const s = ss[0] || {};
+  const sum = k => ss.reduce((a, x) => x[k] != null ? (a ?? 0) + x[k] : a, null);
+  const recs = f.records;
+  const pts = [], prof = [];
+  for (const r of recs){
+    if (r.lat != null && r.lon != null && Math.abs(r.lat) <= 90 && Math.abs(r.lon) <= 180 && !(r.lat === 0 && r.lon === 0)) pts.push([r.lat, r.lon]);
+    if (r.alt != null) prof.push([r.dist ?? prof.length, r.alt]);
+  }
+  const lastDist = recs.reduceRight((a, r) => a ?? r.dist, null);
+  const a = {
+    name, sample: false,
+    sport: s[5] ?? (f.sport ? f.sport[0] : 0),
+    start: s[2] ?? (recs[0] && recs[0].t),
+    distance: sum(9) != null ? sum(9) / 100 : lastDist,
+    timer: sum(8) != null ? sum(8) / 1000 : null,
+    elapsed: sum(7) != null ? sum(7) / 1000 : null,
+    ascent: sum(22), descent: sum(23), calories: sum(11),
+    avgSpeed: (s[124] ?? s[14]) != null ? (s[124] ?? s[14]) / 1000 : null,
+    maxSpeed: (s[125] ?? s[15]) != null ? (s[125] ?? s[15]) / 1000 : null,
+    avgHr: s[16], maxHr: s[17], avgCad: s[18], avgPower: s[20], maxPower: s[21], np: s[34], temp: s[57],
+    tz: null, pts, prof
+  };
+  if (f.activity && f.activity[5] != null && f.activity[253] != null) a.tz = f.activity[5] - f.activity[253];
+  if (a.elapsed == null && recs.length > 1) a.elapsed = recs[recs.length-1].t - recs[0].t;
+  if (a.timer == null) a.timer = a.elapsed;
+  if (a.ascent == null && prof.length > 1){
+    let g = 0, ref = prof[0][1];
+    for (const [, al] of prof){ if (al - ref > 3){ g += al - ref; ref = al; } else if (ref - al > 3) ref = al; }
+    a.ascent = Math.round(g);
+  }
+  if (a.avgSpeed == null && a.distance && a.timer) a.avgSpeed = a.distance / a.timer;
+  // FIT defines session field 59 total_moving_time; use it when the device filled it in, else calculate
+  const fitMoving = sum(59);
+  a.movingFromFit = fitMoving != null;
+  a.moving = a.movingFromFit ? fitMoving / 1000 : movingTime(recs, a.sport);
+  return a;
+}
+
+/* Moving time: add up the seconds between consecutive records only while you are actually moving.
+   - speed comes from the watch's own speed reading, or distance/time between the two records
+   - below the sport's threshold counts as stopped (traffic lights, rests, photo stops)
+   - a gap over 2 minutes between records means the timer was paused, so it is skipped */
+const MOVE_MIN = {run: 0.5, walk: 0.3, ride: 0.8}; // m/s
+function moveThreshold(sport){ return sport === 1 ? MOVE_MIN.run : (sport === 11 || sport === 17) ? MOVE_MIN.walk : MOVE_MIN.ride; }
+function movingTime(recs, sport){
+  if (recs.length < 2) return null;
+  const min = moveThreshold(sport);
+  let total = 0, any = false;
+  for (let i = 1; i < recs.length; i++){
+    const p = recs[i - 1], r = recs[i];
+    if (p.t == null || r.t == null) continue;
+    const dt = r.t - p.t;
+    if (dt <= 0 || dt > 120) continue;
+    let v = r.spd;
+    if (v == null){
+      if (p.dist != null && r.dist != null) v = (r.dist - p.dist) / dt;
+      else if (p.lat != null && r.lat != null) v = hav([p.lat, p.lon], [r.lat, r.lon]) / dt;
+      else continue;
+    }
+    any = true;
+    if (v >= min) total += dt;
+  }
+  return any ? total : null;
+}
+/* the time and speed the card shows, following the chosen moving-time mode */
+const movingSec = a => (S.movingMode === 'auto' && a.moving) ? a.moving : a.timer;
+const avgSpeedOf = a => (S.movingMode === 'auto' && a.moving && a.distance) ? a.distance / a.moving : a.avgSpeed;
+
+/* zip: Garmin's 匯出檔案 gives a .zip holding the .fit */
+async function unzipFirstFit(buf){
+  const dv = new DataView(buf);
+  let e = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 66000); i--){ if (dv.getUint32(i, true) === 0x06054b50){ e = i; break; } }
+  if (e < 0) throw new Error('壓縮檔格式無法辨識。');
+  const count = dv.getUint16(e + 10, true);
+  let p = dv.getUint32(e + 16, true);
+  for (let i = 0; i < count; i++){
+    const method = dv.getUint16(p + 10, true);
+    const csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const loff = dv.getUint32(p + 42, true);
+    const fname = td.decode(new Uint8Array(buf, p + 46, nlen));
+    p += 46 + nlen + xlen + clen;
+    if (!/\.fit$/i.test(fname)) continue;
+    const start = loff + 30 + dv.getUint16(loff + 26, true) + dv.getUint16(loff + 28, true);
+    const data = new Uint8Array(buf, start, csize);
+    if (method === 0) return {name: fname, buf: data.slice().buffer};
+    if (method === 8){
+      if (typeof DecompressionStream === 'undefined') throw new Error('這個瀏覽器無法解壓縮，請先解壓縮後載入 .fit 檔。');
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return {name: fname, buf: await new Response(stream).arrayBuffer()};
+    }
+    throw new Error('不支援這種壓縮方式，請先解壓縮。');
+  }
+  throw new Error('壓縮檔裡沒有 .fit 檔。');
+}
+
+/* ---------------- sample activity (synthetic) ---------------- */
+function sampleActivity(){
+  const pts = [], prof = [];
+  const lat0 = 24.16, lon0 = 120.75, N = 900;
+  let dist = 0, prev = null;
+  for (let i = 0; i <= N; i++){
+    const t = i / N * Math.PI * 2;
+    const r = 1 + 0.28 * Math.sin(3 * t + 0.6) + 0.12 * Math.cos(7 * t);
+    const lat = lat0 + 0.075 * r * Math.sin(t), lon = lon0 + 0.09 * r * Math.cos(t) * 1.1;
+    if (prev) dist += hav(prev, [lat, lon]);
+    prev = [lat, lon];
+    pts.push([lat, lon]);
+    prof.push([dist, 260 + 340 * Math.max(0, Math.sin(t * 1.0 - 0.4)) + 60 * Math.sin(t * 6)]);
+  }
+  return {name:'範例：大坑環線', sample:true, sport:2, start: Math.floor(Date.UTC(2026, 9, 12, 6, 12) / 1000) - FIT_EPOCH, tz: 0,
+    distance: dist, timer: 9882, elapsed: 10840, ascent: 1126, descent: 1126, calories: 1688,
+    avgSpeed: dist / 9882, maxSpeed: 15.8, avgHr: 141, maxHr: 176, avgCad: 84, avgPower: 168, maxPower: 612, np: 189, temp: 24, pts, prof};
+}
+function hav(a, b){
+  const R = 6371000, toR = Math.PI / 180;
+  const dLa = (b[0] - a[0]) * toR, dLo = (b[1] - a[1]) * toR;
+  const x = Math.sin(dLa/2) ** 2 + Math.cos(a[0]*toR) * Math.cos(b[0]*toR) * Math.sin(dLo/2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+/* ---------------- formatting & stat definitions ---------------- */
+const pad = n => String(n).padStart(2, '0');
+const fmtNum = (v, d) => v.toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
+const fmtInt = v => Math.round(v).toLocaleString('en-US');
+function fmtDur(sec){
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  if (S.timeFmt === 'hm') return h ? `${h}h ${m}m` : (m ? `${m}m ${s}s` : `${s}s`);
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+function fmtPace(spk){ spk = Math.round(spk); return `${Math.floor(spk / 60)}:${pad(spk % 60)}`; }
+const isRun = a => [1, 11, 17].includes(a.sport);
+const SPORT = {0:'一般',1:'跑步',2:'自行車',4:'健身器材',5:'游泳',10:'訓練',11:'健走',17:'登山'};
+
+const STATS = [
+  {k:'distance', en:'Distance', zh:'距離', get:a => a.distance > 0 ? [fmtNum(a.distance / 1000, 2), 'km'] : null},
+  {k:'moving', en:'Moving Time', zh:'移動時間', get:a => movingSec(a) ? [fmtDur(movingSec(a)), ''] : null},
+  {k:'elapsed', en:'Elapsed Time', zh:'總時間', get:a => a.elapsed ? [fmtDur(a.elapsed), ''] : null},
+  {k:'pace', en:'Pace', zh:'配速', get:a => a.distance > 100 && movingSec(a) ? [fmtPace(movingSec(a) / (a.distance / 1000)), '/km'] : null},
+  {k:'speed', en:'Avg Speed', zh:'平均速度', get:a => avgSpeedOf(a) ? [fmtNum(avgSpeedOf(a) * 3.6, 1), 'km/h'] : null},
+  {k:'maxSpeed', en:'Max Speed', zh:'最高速度', get:a => a.maxSpeed ? [fmtNum(a.maxSpeed * 3.6, 1), 'km/h'] : null},
+  {k:'gain', en:'Elev Gain', zh:'爬升', get:a => a.ascent != null ? [fmtInt(a.ascent), 'm'] : null},
+  {k:'power', en:'Avg Power', zh:'平均功率', get:a => a.avgPower ? [fmtInt(a.avgPower), 'W'] : null},
+  {k:'np', en:'Norm Power', zh:'標準化功率', get:a => a.np ? [fmtInt(a.np), 'W'] : null},
+  {k:'maxPower', en:'Max Power', zh:'最大功率', get:a => a.maxPower ? [fmtInt(a.maxPower), 'W'] : null},
+  {k:'hr', en:'Avg Heart Rate', zh:'平均心率', get:a => a.avgHr ? [fmtInt(a.avgHr), 'bpm'] : null},
+  {k:'maxHr', en:'Max Heart Rate', zh:'最高心率', get:a => a.maxHr ? [fmtInt(a.maxHr), 'bpm'] : null},
+  {k:'cadence', en:'Cadence', zh:'踏頻 / 步頻', get:a => a.avgCad ? (isRun(a) ? [fmtInt(a.avgCad * 2), 'spm'] : [fmtInt(a.avgCad), 'rpm']) : null},
+  {k:'calories', en:'Calories', zh:'卡路里', get:a => a.calories ? [fmtInt(a.calories), S.lang === 'zh' ? '大卡' : 'Cal'] : null},
+  {k:'temp', en:'Avg Temp', zh:'平均溫度', get:a => a.temp != null ? [String(a.temp), '°C'] : null},
+];
+const STAT = Object.fromEntries(STATS.map(s => [s.k, s]));
+function fmtDate(a){
+  if (a.start == null) return '';
+  const off = a.tz ?? -new Date().getTimezoneOffset() * 60;
+  const d = new Date((a.start + FIT_EPOCH + off) * 1000);
+  const y = d.getUTCFullYear(), mo = d.getUTCMonth(), day = d.getUTCDate(), hh = d.getUTCHours(), mi = d.getUTCMinutes();
+  if (S.lang === 'zh') return `${y}年${mo + 1}月${day}日 ${pad(hh)}:${pad(mi)}`;
+  const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${M[mo]} ${day}, ${y} · ${pad(hh)}:${pad(mi)}`;
+}
+
+/* ---------------- settings ---------------- */
+const FONTS = {
+  barlow:{name:'Barlow', fam:'Barlow', lw:500, vw:800},
+  cond:{name:'Barlow Condensed', fam:'Barlow Condensed', lw:500, vw:800},
+  oswald:{name:'Oswald', fam:'Oswald', lw:500, vw:700},
+  bebas:{name:'Bebas Neue', fam:'Bebas Neue', lw:400, vw:400},
+  noto:{name:'思源黑體', fam:'Noto Sans TC', lw:500, vw:900},
+};
+const TEXT_COLORS = ['#FFFFFF', '#111111', '#FC5200', '#F5E642', '#7FE3F0'];
+const LINE_COLORS = ['#FC5200', '#FFFFFF', '#111111', '#F5E642', '#3DDC84', '#36B9FF', '#FF4F9A'];
+const BG_COLORS = ['#111111', '#FFFFFF', '#1E3A2B', '#0F2440', '#F2E9DA'];
+const DEF = {
+  size:'story', preset:'stack', lang:'en', timeFmt:'colon', font:'barlow',
+  text:'#FFFFFF', labelAlpha:0.8, line:'#FC5200', lineW:8, dots:false, shadow:false,
+  showRoute:true, showElev:false, showDate:false, title:'', footer:'',
+  bg:'transparent', bgColor:'#111111', dim:0.2, alignTo:'sel', movingMode:'auto',
+  enabled:{run:['distance','pace','moving'], ride:['distance','gain','moving','speed','power','calories']},
+  order: STATS.map(s => s.k)
+};
+const KEY = 'trace-card-v1';
+let S = structuredClone(DEF);
+try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) S = Object.assign(S, saved); } catch {}
+for (const k of STATS.map(s => s.k)) if (!S.order.includes(k)) S.order.push(k);
+let saveT = 0;
+function save(){ clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} }, 300); }
+
+/* ---------------- state ---------------- */
+let act = sampleActivity();
+let route = null; // normalized route {pts, aspect}
+let els = {};     // id -> {x, y, s}  (x,y as fraction of canvas)
+let manual = false;
+let sel = new Set();   // selected element ids
+let multi = false;     // phone multi-select mode
+let photo = null, photoZoom = 1, photoOff = [0, 0];
+let hits = [];
+let guide = null;
+
+const kind = () => isRun(act) ? 'run' : 'ride';
+const enabledList = () => S.enabled[kind()];
+function prepRoute(){
+  route = null;
+  if (act.pts.length < 2) return;
+  const toR = Math.PI / 180;
+  const P = act.pts.map(([la, lo]) => [lo * toR, Math.log(Math.tan(Math.PI / 4 + la * toR / 2))]);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const [x, y] of P){ x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+  const w = x1 - x0 || 1e-9, h = y1 - y0 || 1e-9, m = Math.max(w, h);
+  const out = []; let last = null;
+  for (const [x, y] of P){
+    const q = [(x - x0) / m, (y1 - y) / m];
+    if (!last || Math.hypot(q[0] - last[0], q[1] - last[1]) > 0.0015){ out.push(q); last = q; }
+  }
+  out.push([(P[P.length-1][0] - x0) / m, (y1 - P[P.length-1][1]) / m]);
+  route = {pts: out, w: w / m, h: h / m};
+}
+
+function visibleIds(){
+  const ids = [];
+  if (S.title.trim()) ids.push('title');
+  if (S.showDate && act.start != null) ids.push('date');
+  for (const k of S.order) if (enabledList().includes(k) && STAT[k].get(act)) ids.push('stat:' + k);
+  if (S.showRoute && route) ids.push('route');
+  if (S.showElev && act.prof.length > 1) ids.push('elev');
+  if (S.footer.trim()) ids.push('footer');
+  return ids;
+}
+function canvasSize(){
+  const W = 1080;
+  if (S.size === 'portrait') return [W, 1350];
+  if (S.size === 'square') return [W, 1080];
+  if (S.size === 'photo' && photo) return [W, Math.round(W * photo.height / photo.width)];
+  return [W, 1920];
+}
+
+/* element nominal sizes at scale 1, in 1080-wide units */
+const ROUTE_R = 520;
+function routeBox(s){ // returns [w,h] in units
+  const R = ROUTE_R * s; if (!route) return [R, R];
+  return route.w >= route.h ? [R, R * route.h / route.w] : [R * route.w / route.h, R];
+}
+const STAT_H = 112;
+
+/* ---------------- preset layouts ---------------- */
+function applyPreset(){
+  const [W, H] = canvasSize(); const u = W / 1080; const tall = H / W > 1.5;
+  const ids = visibleIds(); const has = id => ids.includes(id);
+  const stats = ids.filter(i => i.startsWith('stat:'));
+  const P = {};
+  const put = (id, x, y, s = 1) => { P[id] = {x: x / W, y: y / H, s}; };
+  const p = S.preset;
+
+  if (p === 'stack'){
+    const items = [];
+    if (has('title')) items.push(['title', 70]);
+    if (has('date')) items.push(['date', 40]);
+    stats.forEach(id => items.push([id, STAT_H]));
+    if (has('route')) items.push(['route', routeBox(1)[1]]);
+    if (has('elev')) items.push(['elev', 150]);
+    if (has('footer')) items.push(['footer', 50]);
+    const gap = 34;
+    const total = items.reduce((a, [, h]) => a + h, 0) + gap * Math.max(0, items.length - 1);
+    const f = Math.min(1.15, (H / u * 0.88) / total);
+    let y = (H - total * f * u) / 2;
+    for (const [id, h] of items){ put(id, W / 2, y + h * f * u / 2, f); y += (h + gap) * f * u; }
+  }
+  else if (p === 'grid'){
+    const s = 0.8, rows = Math.ceil(stats.length / 2), rowH = (STAT_H + 34) * s * u;
+    const blockH = Math.max(rows * rowH - 34 * s * u, has('route') ? routeBox(0.85)[1] * u : 0);
+    const cy = tall ? H * 0.3 : H * 0.5;
+    const top = cy - blockH / 2;
+    const colX = has('route') ? [W * 0.18, W * 0.44] : [W * 0.32, W * 0.68];
+    stats.forEach((id, i) => put(id, colX[i % 2], top + Math.floor(i / 2) * rowH + STAT_H * s * u / 2, s));
+    if (has('route')) put('route', W * 0.77, cy, 0.85 * Math.min(1, 0.4 * 1080 / (ROUTE_R * 0.85)));
+    if (has('title')) put('title', has('route') ? W * 0.31 : W / 2, top - 90 * u, 0.9);
+    if (has('date')) put('date', has('route') ? W * 0.31 : W / 2, top - 40 * u, 0.9);
+    let y = cy + blockH / 2 + 60 * u;
+    if (has('elev')){ put('elev', W / 2, y + 60 * u, 1.1); y += 150 * u; }
+    if (has('footer')) put('footer', W / 2, y + 40 * u, 0.9);
+  }
+  else if (p === 'bottom'){
+    const n = stats.length, c = Math.min(Math.max(n, 1), 3), rows = Math.ceil(n / c);
+    const s = tall ? 0.9 : 0.72, rowH = (STAT_H + 28) * s * u;
+    const statsH = rows * rowH;
+    const bottomPad = (has('footer') ? 110 : 60) * u;
+    const sTop = H - bottomPad - statsH;
+    stats.forEach((id, i) => {
+      const r = Math.floor(i / c), inRow = Math.min(c, n - r * c), col = i % c;
+      put(id, W * (0.5 + (col - (inRow - 1) / 2) * 0.3), sTop + r * rowH + STAT_H * s * u / 2, s);
+    });
+    let top = (has('title') ? 150 : 80) * u;
+    if (has('title')) put('title', W / 2, 80 * u, 1);
+    if (has('date')){ put('date', W / 2, (has('title') ? 130 : 70) * u, 1); top += 40 * u; }
+    let avail = sTop - top - 40 * u;
+    if (has('elev')){ put('elev', W / 2, sTop - 110 * u, 1.1); avail -= 190 * u; }
+    if (has('route')){
+      const [bw, bh] = routeBox(1);
+      const rs = Math.min(1.6, (avail / u) / bh, (W * 0.85 / u) / bw);
+      put('route', W / 2, top + avail / 2, Math.max(0.3, rs));
+    }
+    if (has('footer')) put('footer', W / 2, H - 60 * u, 0.9);
+  }
+  else { // minimal
+    const n = stats.length;
+    const rs = tall ? 1.1 : 0.85;
+    const rH = has('route') ? routeBox(rs)[1] * u : 0;
+    const s = Math.min(0.7, 2.8 / Math.max(n, 1));
+    const groupH = rH + (n ? 70 * u + STAT_H * s * u : 0) + (has('elev') ? 180 * u : 0);
+    let y = (H - groupH) / 2;
+    if (has('title')) put('title', W / 2, y - 120 * u, 0.9);
+    if (has('date')) put('date', W / 2, y - 70 * u, 0.9);
+    if (has('route')){ put('route', W / 2, y + rH / 2, rs); y += rH + 70 * u; }
+    if (has('elev')){ put('elev', W / 2, y + 40 * u, 1); y += 180 * u; }
+    stats.forEach((id, i) => put(id, W * (0.5 + (i - (n - 1) / 2) * Math.min(0.24, 0.9 / n)), y + STAT_H * s * u / 2, s));
+    if (has('footer')) put('footer', W / 2, Math.min(H - 60 * u, y + STAT_H * s * u + 90 * u), 0.8);
+  }
+  els = fitToCanvas(P, W, H);
+}
+/* shrink a preset uniformly when its content would spill past the canvas */
+function fitToCanvas(P, W, H){
+  const u = W / 1080, F = FONTS[S.font] || FONTS.barlow;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [id, e] of Object.entries(P)){
+    let w, h;
+    if (id.startsWith('stat:')){ w = 320; h = STAT_H; }
+    else if (id === 'route'){ [w, h] = routeBox(1); w += S.lineW * 2; h += S.lineW * 2; }
+    else if (id === 'elev'){ w = 760; h = 150; }
+    else {
+      const txt = id === 'title' ? S.title : id === 'date' ? fmtDate(act) : S.footer;
+      const px = id === 'title' ? 60 : id === 'date' ? 32 : 42;
+      cx.font = fontSpec(F.vw, px, F.fam); w = cx.measureText(txt.trim()).width; h = px * 1.3;
+    }
+    w *= e.s * u; h *= e.s * u;
+    const X = e.x * W, Y = e.y * H;
+    x0 = Math.min(x0, X - w / 2); x1 = Math.max(x1, X + w / 2); y0 = Math.min(y0, Y - h / 2); y1 = Math.max(y1, Y + h / 2);
+  }
+  if (!Number.isFinite(x0)) return P;
+  const f = Math.min(1, W * 0.92 / (x1 - x0), H * 0.92 / (y1 - y0));
+  const inside = x0 >= W * 0.03 && x1 <= W * 0.97 && y0 >= H * 0.03 && y1 <= H * 0.97;
+  if (f >= 1 && inside) return P;
+  const bx = (x0 + x1) / 2, by = (y0 + y1) / 2;
+  const out = {};
+  for (const [id, e] of Object.entries(P)) out[id] = {x: (W / 2 + (e.x * W - bx) * f) / W, y: (H / 2 + (e.y * H - by) * f) / H, s: e.s * f};
+  return out;
+}
+function ensurePlaced(){
+  if (!manual){ applyPreset(); return; }
+  for (const id of visibleIds()) if (!els[id]) els[id] = {x: 0.5, y: 0.5, s: 1};
+}
+
+/* ---------------- drawing ---------------- */
+const pendingFonts = new Set();
+function fontSpec(w, px, fam){ return `${w} ${px.toFixed(1)}px "${fam}", "Noto Sans TC", sans-serif`; }
+function needFont(spec, text){
+  try {
+    if (document.fonts.check(spec, text)) return;
+    const key = spec.replace(/[\d.]+px/, '') + '|' + text;
+    if (pendingFonts.has(key)) return;
+    pendingFonts.add(key);
+    document.fonts.load(spec, text).then(scheduleRender, () => {});
+  } catch {}
+}
+function setFont(ctx, w, px, fam, text){ const sp = fontSpec(w, px, fam); needFont(sp, text); ctx.font = sp; }
+
+function drawEl(ctx, id, cx, cy, k){ // k = s * (W/1080)
+  const F = FONTS[S.font] || FONTS.barlow;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  if (id.startsWith('stat:')){
+    const def = STAT[id.slice(5)];
+    const [val, unit] = def.get(act);
+    const label = S.lang === 'zh' ? def.zh : def.en;
+    const top = cy - STAT_H * k / 2;
+    setFont(ctx, F.lw, 30 * k, F.fam, label);
+    const lw = ctx.measureText(label).width;
+    ctx.globalAlpha = S.labelAlpha; ctx.fillStyle = S.text;
+    ctx.fillText(label, cx - lw / 2, top + 28 * k);
+    ctx.globalAlpha = 1;
+    setFont(ctx, F.vw, 76 * k, F.fam, val);
+    const vw = ctx.measureText(val).width;
+    let uw = 0, gap = 0;
+    if (unit){ setFont(ctx, F.vw, 46 * k, F.fam, unit); uw = ctx.measureText(unit).width; gap = 10 * k; }
+    const tw = vw + gap + uw, x0 = cx - tw / 2, base = top + 104 * k;
+    setFont(ctx, F.vw, 76 * k, F.fam, val); ctx.fillText(val, x0, base);
+    if (unit){ setFont(ctx, F.vw, 46 * k, F.fam, unit); ctx.fillText(unit, x0 + vw + gap, base); }
+    const bw = Math.max(lw, tw);
+    return [cx - bw / 2, top, cx + bw / 2, top + STAT_H * k];
+  }
+  if (id === 'title' || id === 'date' || id === 'footer'){
+    const txt = id === 'title' ? S.title.trim() : id === 'date' ? fmtDate(act) : S.footer.trim();
+    const px = (id === 'title' ? 60 : id === 'date' ? 32 : 42) * k;
+    const w = id === 'date' ? F.lw : F.vw;
+    setFont(ctx, w, px, F.fam, txt);
+    if (id === 'footer' && 'letterSpacing' in ctx) ctx.letterSpacing = (2 * k).toFixed(1) + 'px';
+    const tw = ctx.measureText(txt).width;
+    ctx.fillStyle = S.text; ctx.globalAlpha = id === 'date' ? S.labelAlpha : 1;
+    ctx.fillText(txt, cx - tw / 2, cy + px * 0.36);
+    ctx.globalAlpha = 1;
+    if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+    return [cx - tw / 2, cy - px * 0.62, cx + tw / 2, cy + px * 0.62];
+  }
+  if (id === 'route' && route){
+    const [bw, bh] = routeBox(1).map(v => v * k);
+    const m = Math.max(bw, bh);
+    const x0 = cx - bw / 2, y0 = cy - bh / 2;
+    ctx.strokeStyle = S.line; ctx.lineWidth = S.lineW * k * 1.2;
+    ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.beginPath();
+    route.pts.forEach(([x, y], i) => { const X = x0 + x * m, Y = y0 + y * m; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+    ctx.stroke();
+    if (S.dots){
+      const r = Math.max(S.lineW * 1.1, 7) * k;
+      const a = route.pts[0], b = route.pts[route.pts.length - 1];
+      ctx.fillStyle = S.text;
+      ctx.beginPath(); ctx.arc(x0 + a[0] * m, y0 + a[1] * m, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = S.line; ctx.strokeStyle = S.text; ctx.lineWidth = r * 0.45;
+      ctx.beginPath(); ctx.arc(x0 + b[0] * m, y0 + b[1] * m, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    const pd = S.lineW * k;
+    return [x0 - pd, y0 - pd, x0 + bw + pd, y0 + bh + pd];
+  }
+  if (id === 'elev'){
+    const w = 760 * k, h = 150 * k, x0 = cx - w / 2, y0 = cy - h / 2;
+    const pr = act.prof, step = Math.max(1, Math.floor(pr.length / 400));
+    let d0 = pr[0][0], d1 = pr[pr.length - 1][0], a0 = Infinity, a1 = -Infinity;
+    for (const [, al] of pr){ a0 = Math.min(a0, al); a1 = Math.max(a1, al); }
+    const dr = d1 - d0 || 1, ar = a1 - a0 || 1;
+    const X = d => x0 + (d - d0) / dr * w, Y = al => y0 + h - (al - a0) / ar * h * 0.9;
+    ctx.beginPath(); ctx.moveTo(X(d0), y0 + h);
+    for (let i = 0; i < pr.length; i += step) ctx.lineTo(X(pr[i][0]), Y(pr[i][1]));
+    ctx.lineTo(X(d1), Y(pr[pr.length - 1][1])); ctx.lineTo(X(d1), y0 + h); ctx.closePath();
+    ctx.save(); ctx.globalAlpha = 0.28; ctx.fillStyle = S.line; ctx.fill(); ctx.restore();
+    ctx.beginPath();
+    for (let i = 0; i < pr.length; i += step){ const px = X(pr[i][0]), py = Y(pr[i][1]); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.strokeStyle = S.line; ctx.lineWidth = Math.max(2, S.lineW * 0.5) * k; ctx.lineJoin = 'round'; ctx.stroke();
+    return [x0, y0, x0 + w, y0 + h];
+  }
+  return null;
+}
+
+function draw(ctx, W, H, forExport){
+  const u = W / 1080;
+  ctx.clearRect(0, 0, W, H);
+  if (S.bg === 'color'){ ctx.fillStyle = S.bgColor; ctx.fillRect(0, 0, W, H); }
+  if (S.bg === 'photo' && photo){
+    const sc = Math.max(W / photo.width, H / photo.height) * photoZoom;
+    const dw = photo.width * sc, dh = photo.height * sc;
+    clampPhoto(W, H);
+    ctx.drawImage(photo, (W - dw) / 2 + photoOff[0] * u, (H - dh) / 2 + photoOff[1] * u, dw, dh);
+    if (S.dim > 0){ ctx.fillStyle = `rgba(0,0,0,${S.dim})`; ctx.fillRect(0, 0, W, H); }
+  }
+  const boxes = [];
+  ctx.save();
+  if (S.shadow){ ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 16 * u; ctx.shadowOffsetY = 3 * u; }
+  for (const id of visibleIds()){
+    const e = els[id]; if (!e) continue;
+    const b = drawEl(ctx, id, e.x * W, e.y * H, e.s * u);
+    if (b) boxes.push({id, b});
+  }
+  ctx.restore();
+  if (!forExport){
+    hits = boxes;
+    ctx.save();
+    ctx.lineWidth = 3 * u; ctx.setLineDash([12 * u, 8 * u]); ctx.strokeStyle = '#2E9BFF';
+    for (const x of boxes) if (sel.has(x.id)){ const [a, b, c, d] = x.b, p = 10 * u; ctx.strokeRect(a - p, b - p, c - a + 2 * p, d - b + 2 * p); }
+    if (guide){ ctx.strokeStyle = 'rgba(255,79,154,0.9)'; ctx.setLineDash([]); ctx.lineWidth = 2 * u;
+      if (guide.x){ ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke(); }
+      if (guide.y){ ctx.beginPath(); ctx.moveTo(0, H / 2); ctx.lineTo(W, H / 2); ctx.stroke(); } }
+    ctx.restore();
+  }
+}
+function clampPhoto(W, H){
+  if (!photo) return;
+  const u = W / 1080, sc = Math.max(W / photo.width, H / photo.height) * photoZoom;
+  const mx = Math.max(0, (photo.width * sc - W) / 2) / u, my = Math.max(0, (photo.height * sc - H) / 2) / u;
+  photoOff[0] = Math.max(-mx, Math.min(mx, photoOff[0]));
+  photoOff[1] = Math.max(-my, Math.min(my, photoOff[1]));
+}
+
+const cv = document.getElementById('cv'), cx = cv.getContext('2d');
+let rq = 0;
+function scheduleRender(){ if (!rq) rq = requestAnimationFrame(() => { rq = 0; render(); }); }
+function render(){
+  const [W, H] = canvasSize();
+  if (cv.width !== W || cv.height !== H){ cv.width = W; cv.height = H; }
+  draw(cx, W, H, false);
+  updateSelBar();
+}
+
+/* ---------------- canvas interaction ---------------- */
+let drag = null;
+function toCanvas(e){ const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; }
+function hitTest([x, y]){
+  const pad = 14 * cv.width / 1080;
+  for (let i = hits.length - 1; i >= 0; i--){ const [a, b, c, d] = hits[i].b; if (x >= a - pad && x <= c + pad && y >= b - pad && y <= d + pad) return hits[i].id; }
+  return null;
+}
+const selIds = () => { const vis = visibleIds(); return [...sel].filter(id => els[id] && vis.includes(id)); };
+function markManual(){ if (!manual){ manual = true; updateManualNote(); } }
+cv.addEventListener('pointerdown', e => {
+  const p = toCanvas(e); const id = hitTest(p);
+  const toggle = multi || e.shiftKey || e.ctrlKey || e.metaKey;
+  if (id){
+    if (toggle){ sel.has(id) ? sel.delete(id) : sel.add(id); }
+    else if (!sel.has(id)) sel = new Set([id]);
+    if (sel.has(id)){
+      const ids = selIds();
+      drag = {p, ids, lead: id, toggle, moved: false, e0: Object.fromEntries(ids.map(i => [i, {...els[i]}]))};
+    }
+  }
+  else if (S.bg === 'photo' && photo){ if (!toggle) sel.clear(); drag = {photo: true, p, o0: [...photoOff]}; }
+  else if (!toggle) sel.clear();
+  if (drag){ cv.setPointerCapture(e.pointerId); cv.classList.add('dragging'); }
+  render();
+});
+cv.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const p = toCanvas(e), W = cv.width, H = cv.height, u = W / 1080;
+  const dx = p[0] - drag.p[0], dy = p[1] - drag.p[1];
+  if (drag.photo){ photoOff = [drag.o0[0] + dx / u, drag.o0[1] + dy / u]; scheduleRender(); return; }
+  if (!drag.moved){ if (Math.hypot(dx, dy) < 6 * u) return; drag.moved = true; }
+  const l0 = drag.e0[drag.lead];
+  let x = l0.x + dx / W, y = l0.y + dy / H;
+  guide = {};
+  if (Math.abs(x - 0.5) * W < 14 * u){ x = 0.5; guide.x = true; }
+  if (Math.abs(y - 0.5) * H < 14 * u){ y = 0.5; guide.y = true; }
+  const ox = x - l0.x, oy = y - l0.y;
+  for (const i of drag.ids) els[i] = {...els[i], x: drag.e0[i].x + ox, y: drag.e0[i].y + oy};
+  markManual();
+  scheduleRender();
+});
+function endDrag(){
+  if (!drag) return;
+  // a plain tap on one item of a multi-selection narrows the selection to it
+  if (!drag.photo && !drag.moved && !drag.toggle && sel.size > 1) sel = new Set([drag.lead]);
+  drag = null; guide = null; cv.classList.remove('dragging'); scheduleRender();
+}
+cv.addEventListener('pointerup', endDrag);
+cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('wheel', e => {
+  if (!selIds().length) return;
+  e.preventDefault();
+  scaleSel(e.deltaY < 0 ? 1.05 : 1 / 1.05);
+}, {passive: false});
+function scaleSel(f){
+  for (const id of selIds()) els[id] = {...els[id], s: Math.max(0.2, Math.min(4, els[id].s * f))};
+  markManual();
+  scheduleRender();
+}
+
+/* align & distribute, like PowerPoint: one item aligns to the canvas; several align to each other unless set to canvas */
+const ALIGN_MARGIN = 64; // canvas edge inset, in 1080-wide units
+function alignSel(a){
+  const W = cv.width, H = cv.height, m = ALIGN_MARGIN * W / 1080;
+  const bx = Object.fromEntries(hits.map(h => [h.id, h.b]));
+  const items = selIds().filter(id => bx[id]).map(id => ({id, b: bx[id]}));
+  if (!items.length) return;
+  const useCanvas = items.length === 1 || S.alignTo === 'canvas';
+  const [L, T, R, B] = useCanvas ? [m, m, W - m, H - m] : [
+    Math.min(...items.map(i => i.b[0])), Math.min(...items.map(i => i.b[1])),
+    Math.max(...items.map(i => i.b[2])), Math.max(...items.map(i => i.b[3]))];
+  const move = (id, dx, dy) => { els[id] = {...els[id], x: els[id].x + dx / W, y: els[id].y + dy / H}; };
+  if (a === 'dh' || a === 'dv'){
+    if (items.length < (useCanvas ? 2 : 3)) return;
+    const ax = a === 'dh' ? 0 : 1;
+    const s = items.slice().sort((p, q) => (p.b[ax] + p.b[ax + 2]) - (q.b[ax] + q.b[ax + 2]));
+    const sizes = s.map(i => i.b[ax + 2] - i.b[ax]);
+    const start = useCanvas ? (ax ? T : L) : s[0].b[ax];
+    const end = useCanvas ? (ax ? B : R) : s[s.length - 1].b[ax + 2];
+    const gap = (end - start - sizes.reduce((x, y) => x + y, 0)) / (s.length - 1);
+    let pos = start;
+    s.forEach((it, k) => { const d = pos - it.b[ax]; ax ? move(it.id, 0, d) : move(it.id, d, 0); pos += sizes[k] + gap; });
+  } else {
+    for (const {id, b} of items){
+      if (a === 'left') move(id, L - b[0], 0);
+      else if (a === 'right') move(id, R - b[2], 0);
+      else if (a === 'hcenter') move(id, (L + R) / 2 - (b[0] + b[2]) / 2, 0);
+      else if (a === 'top') move(id, 0, T - b[1]);
+      else if (a === 'bottom') move(id, 0, B - b[3]);
+      else if (a === 'vcenter') move(id, 0, (T + B) / 2 - (b[1] + b[3]) / 2);
+    }
+  }
+  markManual();
+  render();
+}
+document.getElementById('alignBar').addEventListener('click', e => { const b = e.target.closest('button[data-a]'); if (b && !b.disabled) alignSel(b.dataset.a); });
+
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA')) return;
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a'){ e.preventDefault(); selectAll(); return; }
+  if (e.key === 'Escape' && sel.size){ sel.clear(); render(); return; }
+  const d = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]}[e.key];
+  if (!d || !selIds().length) return;
+  e.preventDefault();
+  const step = (e.shiftKey ? 20 : 2) * cv.width / 1080;
+  for (const id of selIds()) els[id] = {...els[id], x: els[id].x + d[0] * step / cv.width, y: els[id].y + d[1] * step / cv.height};
+  markManual(); scheduleRender();
+});
+function selectAll(){ sel = new Set(visibleIds()); render(); }
+
+/* ---------------- UI wiring ---------------- */
+const $ = id => document.getElementById(id);
+const status = (msg, err) => { const el = $('status'); el.textContent = msg || ''; el.classList.toggle('err', !!err); };
+function elName(id){
+  if (id.startsWith('stat:')) return STAT[id.slice(5)].zh;
+  return {route:'路線', elev:'海拔剖面', title:'標題', date:'日期', footer:'頁尾文字'}[id] || id;
+}
+function updateSelBar(){
+  const ids = selIds(), n = ids.length, show = n > 0;
+  $('selBar').classList.toggle('on', show);
+  for (const id of ['selSize', 'selHide']) $(id).hidden = !show;
+  $('selName').textContent = n === 1 ? '已選取：' + elName(ids[0]) : n > 1 ? `已選 ${n} 個`
+    : (multi ? '多選中：點物件加入或移除' : '點一下預覽中的物件，就能拖曳或調整大小');
+  $('selMulti').setAttribute('aria-pressed', multi);
+  if (show && document.activeElement !== $('selSize')) $('selSize').value = els[ids[0]].s;
+  const toCanvas = n === 1 || S.alignTo === 'canvas';
+  document.querySelectorAll('#alignBar button').forEach(b => {
+    const dist = b.dataset.a === 'dh' || b.dataset.a === 'dv';
+    b.disabled = dist ? n < (toCanvas ? 2 : 3) : n < 1;
+  });
+}
+$('selSize').addEventListener('input', e => { const ids = selIds(); if (ids.length) scaleSel(+e.target.value / els[ids[0]].s); });
+$('selMulti').addEventListener('click', () => { multi = !multi; render(); });
+$('selHide').addEventListener('click', () => {
+  for (const id of selIds()){
+    if (id.startsWith('stat:')){ const k = id.slice(5); S.enabled[kind()] = enabledList().filter(x => x !== k); }
+    else if (id === 'route') S.showRoute = false;
+    else if (id === 'elev') S.showElev = false;
+    else if (id === 'date') S.showDate = false;
+    else if (id === 'title') S.title = '';
+    else if (id === 'footer') S.footer = '';
+  }
+  sel.clear(); changed(true);
+});
+$('selectAll').addEventListener('click', selectAll);
+function updateManualNote(){ $('manualNote').textContent = manual ? '目前是手動排版。點任何一個預設排版會重新排列所有物件。' : ''; }
+
+function changed(relayout){ save(); if (relayout) ensurePlaced(); syncUI(); render(); }
+
+function seg(id, key, after){
+  const el = $(id);
+  el.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    S[key] = b.dataset.v; after ? after() : changed(true);
+  });
+}
+seg('alignToSeg', 'alignTo', () => changed(false)); seg('movingSeg', 'movingMode', () => changed(false)); seg('langSeg', 'lang');seg('timeSeg', 'timeFmt');
+seg('sizeSeg', 'size', () => { if (S.size === 'photo' && !photo) status('「照片比例」需要先在「背景」加入照片，目前先用 9:16。'); changed(true); });
+seg('bgSeg', 'bg');
+$('presetGrid').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.preset = b.dataset.v; manual = false; updateManualNote(); changed(true); });
+$('resetLayout').addEventListener('click', () => { manual = false; updateManualNote(); changed(true); });
+
+function swatches(id, list, key, withPicker = true){
+  const el = $(id);
+  el.innerHTML = list.map(c => `<button type="button" data-c="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')
+    + (withPicker ? `<input type="color" aria-label="自訂顏色">` : '');
+  el.addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S[key] = b.dataset.c; changed(false); });
+  const pick = el.querySelector('input'); if (pick) pick.addEventListener('input', e => { S[key] = e.target.value.toUpperCase(); changed(false); });
+}
+swatches('textSw', TEXT_COLORS, 'text'); swatches('lineSw', LINE_COLORS, 'line'); swatches('bgSw', BG_COLORS, 'bgColor');
+
+$('fontSel').innerHTML = Object.entries(FONTS).map(([k, f]) => `<option value="${k}">${f.name}</option>`).join('');
+$('fontSel').addEventListener('change', e => { S.font = e.target.value; changed(false); });
+const rng = (id, key, fmt, relayout) => {
+  $(id).addEventListener('input', e => { S[key] = +e.target.value; changed(relayout); });
+  $(id + 'Out') && (rng[id] = fmt);
+};
+rng('labelAlpha', 'labelAlpha', v => Math.round(v * 100) + '%');
+rng('lineW', 'lineW', v => v + ' px');
+rng('dim', 'dim', v => Math.round(v * 100) + '%');
+$('zoom').addEventListener('input', e => { photoZoom = +e.target.value; syncUI(); render(); });
+for (const [id, key, rel] of [['showRoute', 'showRoute', true], ['showElev', 'showElev', true], ['showDate', 'showDate', true], ['dots', 'dots', false], ['shadow', 'shadow', false]])
+  $(id).addEventListener('change', e => { S[key] = e.target.checked; changed(rel); });
+for (const [id, key] of [['titleIn', 'title'], ['footerIn', 'footer']])
+  $(id).addEventListener('input', e => { S[key] = e.target.value; changed(true); });
+
+document.querySelector('.tabs').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.hidden = p.dataset.pane !== b.dataset.tab);
+});
+
+$('statList').addEventListener('click', e => {
+  const b = e.target.closest('button[data-mv]'); if (!b) return;
+  const k = b.closest('li').dataset.k, i = S.order.indexOf(k), j = i + (+b.dataset.mv);
+  if (j < 0 || j >= S.order.length) return;
+  [S.order[i], S.order[j]] = [S.order[j], S.order[i]];
+  changed(true);
+});
+$('statList').addEventListener('change', e => {
+  const k = e.target.closest('li').dataset.k;
+  const list = enabledList().filter(x => x !== k);
+  if (e.target.checked) list.push(k);
+  S.enabled[kind()] = list; changed(true);
+});
+
+function syncUI(){
+  const pressed = (id, v) => $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
+  pressed('alignToSeg', S.alignTo); pressed('movingSeg', S.movingMode);
+  {
+    const th = (moveThreshold(act.sport) * 3.6).toFixed(1);
+    const parts = [];
+    if (act.moving && act.movingFromFit) parts.push(`活動檔內的移動時間：${fmtDur(act.moving)}（裝置自己記錄的）`);
+    else if (act.moving) parts.push(`依速度計算：${fmtDur(act.moving)}（速度低於 ${th} km/h 算停下來）`);
+    else parts.push('這個活動沒有逐秒紀錄，無法依速度計算，會改用手錶計時時間。');
+    if (act.timer) parts.push(`手錶計時：${fmtDur(act.timer)}（按下暫停或自動暫停的時間不算）`);
+    if (act.elapsed) parts.push(`總時間：${fmtDur(act.elapsed)}（從開始到結束）`);
+    $('movingHint').innerHTML = parts.join('<br>');
+  } pressed('langSeg', S.lang); pressed('timeSeg', S.timeFmt); pressed('sizeSeg', S.size); pressed('bgSeg', S.bg); pressed('presetGrid', S.preset);
+  for (const [id, key] of [['textSw', 'text'], ['lineSw', 'line'], ['bgSw', 'bgColor']])
+    $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.c.toUpperCase() === S[key].toUpperCase()));
+  $('fontSel').value = S.font;
+  for (const id of ['labelAlpha', 'lineW', 'dim']){ $(id).value = S[id]; $(id + 'Out').textContent = rng[id](S[id]); }
+  $('zoom').value = photoZoom; $('zoomOut').textContent = Math.round(photoZoom * 100) + '%';
+  for (const id of ['showRoute', 'showElev', 'showDate', 'dots', 'shadow']) $(id).checked = S[id];
+  $('showRoute').disabled = !route; $('showElev').disabled = act.prof.length < 2;
+  if (document.activeElement !== $('titleIn')) $('titleIn').value = S.title;
+  if (document.activeElement !== $('footerIn')) $('footerIn').value = S.footer;
+  $('bgColorGroup').hidden = S.bg !== 'color';
+  $('photoGroup').hidden = S.bg !== 'photo';
+  $('photoClear').disabled = !photo;
+  $('sampleNote').hidden = !act.sample;
+  $('actName').textContent = act.name;
+  // stat list
+  const en = enabledList();
+  $('statList').innerHTML = S.order.map(k => {
+    const d = STAT[k], v = d.get(act);
+    return `<li data-k="${k}" class="${v ? '' : 'na'}"><input type="checkbox" id="st-${k}" ${en.includes(k) ? 'checked' : ''} ${v ? '' : 'disabled'}>
+      <label for="st-${k}">${d.zh}</label><span class="v">${v ? (v[0] + ' ' + v[1]).trim() : '—'}</span>
+      <span class="mv"><button type="button" data-mv="-1" aria-label="上移">↑</button><button type="button" data-mv="1" aria-label="下移">↓</button></span></li>`;
+  }).join('');
+  // summary
+  const sum = [['運動', SPORT[act.sport] || '其他'], ['日期', fmtDate(act) || '—'], ['GPS 軌跡', route ? act.pts.length.toLocaleString() + ' 點' : '沒有（室內活動）']];
+  $('summary').innerHTML = sum.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+}
+
+/* ---------------- file loading ---------------- */
+/* shared entry for every source (local file, Garmin relay): ZIP or FIT bytes → existing parser */
+async function loadActivityBuffer(buf, name){
+  if (!buf || buf.byteLength < 12) throw new Error('檔案是空的或太小，無法讀取。');
+  const u8 = new Uint8Array(buf, 0, 4);
+  if (u8[0] === 0x50 && u8[1] === 0x4B){ const z = await unzipFirstFit(buf); buf = z.buf; }
+  const a = buildActivity(parseFit(buf), name.replace(/\.(fit|zip)$/i, ''));
+  setActivity(a);
+  return a;
+}
+async function loadActivityFile(file){
+  status('讀取中…');
+  try {
+    await loadActivityBuffer(await file.arrayBuffer(), file.name);
+    status(`已載入 ${file.name}`);
+  } catch (err){
+    status((err && err.message) || '無法讀取這個檔案。', true);
+  }
+}
+function setActivity(a){
+  act = a; prepRoute(); sel.clear(); manual = false; updateManualNote();
+  changed(true);
+}
+$('fitIn').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadActivityFile(f); e.target.value = ''; });
+
+async function loadPhoto(file){
+  try {
+    let img;
+    if (window.createImageBitmap){
+      try { img = await createImageBitmap(file, {imageOrientation: 'from-image'}); } catch { img = null; }
+    }
+    if (!img){
+      img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('無法開啟這張照片。')); i.src = URL.createObjectURL(file); });
+    }
+    photo = img; photoZoom = 1; photoOff = [0, 0]; S.bg = 'photo';
+    changed(true); status('照片已加入');
+  } catch (err){ status(err.message || '無法開啟這張照片。', true); }
+}
+$('photoIn').addEventListener('change', e => { const f = e.target.files[0]; if (f) loadPhoto(f); e.target.value = ''; });
+$('photoClear').addEventListener('click', () => { photo = null; if (S.size === 'photo') S.size = 'story'; changed(true); });
+
+// drag & drop onto the page (desktop)
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  for (const f of e.dataTransfer.files){
+    if (/^image\//.test(f.type)) loadPhoto(f); else loadActivityFile(f);
+  }
+});
+
+/* ---------------- export ---------------- */
+const dlP = (window.claude && window.claude.use) ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+$('exportBtn').addEventListener('click', async () => {
+  const [W, H] = canvasSize();
+  const off = document.createElement('canvas'); off.width = W; off.height = H;
+  draw(off.getContext('2d'), W, H, true);
+  const blob = await new Promise(r => off.toBlob(r, 'image/png'));
+  if (!blob){ status('產生圖片失敗，請再試一次。', true); return; }
+  const base = (act.sample ? 'sample' : act.name).replace(/[^\w\-]+/g, '_');
+  const filename = `${base}_${S.bg === 'transparent' ? 'transparent' : 'card'}.png`;
+  const dl = await dlP;
+  if (dl){
+    try { await dl.save({filename, data: blob}); status('已匯出 ' + filename); return; }
+    catch (err){
+      if (err && err.code === 'declined'){ status('已取消匯出。'); return; }
+      if (err && err.code === 'rate_limited'){ status('已有一個儲存視窗開著，請先處理它。'); return; }
+    }
+    showSaveSheet(blob); // saving is not available in this view
+    return;
+  }
+  if (window.claude){ showSaveSheet(blob); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  status('已匯出 ' + filename);
+});
+function showSaveSheet(blob){
+  const url = URL.createObjectURL(blob);
+  $('saveImg').src = url;
+  $('saveSheet').hidden = false;
+  status('');
+}
+$('saveClose').addEventListener('click', () => { $('saveSheet').hidden = true; URL.revokeObjectURL($('saveImg').src); $('saveImg').removeAttribute('src'); });
+
+/* ---------------- Garmin relay (Cloudflare Worker) ---------------- */
+const APP_VERSION = '1.1.0';
+const GM_CFG_KEY = 'trace-card-garmin';      // {url, key} — this device only, never in git
+const GM_IMPORTED_KEY = 'trace-card-imported'; // activityIds already loaded
+const GM_IMPORTED_MAX = 2000;
+const GM_TYPE = {running:'跑步', trail_running:'越野跑', treadmill_running:'跑步機', track_running:'田徑場跑步', indoor_running:'室內跑步',
+  cycling:'自行車', road_biking:'公路車', mountain_biking:'登山車', gravel_cycling:'礫石車', indoor_cycling:'室內自行車', virtual_ride:'虛擬騎乘', e_bike_fitness:'電輔車',
+  walking:'健走', hiking:'登山', mountaineering:'攀登', lap_swimming:'泳池游泳', open_water_swimming:'開放水域游泳', strength_training:'肌力訓練', other:'其他'};
+
+const lsGet = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v ?? d; } catch { return d; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+
+let gmCfg = Object.assign({url: '', key: ''}, lsGet(GM_CFG_KEY, {}));
+let gmImported = new Set((lsGet(GM_IMPORTED_KEY, []) || []).map(String));
+const gm = {days: 30, list: null, busy: false, cache: new Map()}; // cache: activityId -> ArrayBuffer (this visit only)
+
+function gmBase(){
+  let u = (gmCfg.url || '').trim();
+  if (!u) return '';
+  if (!/^https?:\/\//i.test(u)) u = 'https://' + u;
+  return u.replace(/\/+$/, '');
+}
+const gmReady = () => !!(gmBase() && (gmCfg.key || '').trim());
+function gmMarkImported(id){
+  gmImported.delete(id); gmImported.add(id);
+  const arr = [...gmImported].slice(-GM_IMPORTED_MAX);
+  gmImported = new Set(arr); lsSet(GM_IMPORTED_KEY, arr);
+  gmSyncSettings();
+}
+
+/* call the relay; turns every failure into a readable 繁中 message */
+async function gmFetch(path, opts = {}){
+  const base = gmBase();
+  if (!base) throw new Error('請先到「Garmin」分頁填中繼站網址。');
+  let res;
+  try {
+    res = await fetch(base + path, {headers: {'X-Key': (gmCfg.key || '').trim()}, cache: 'no-store', signal: opts.signal});
+  } catch (err){
+    if (err && err.name === 'AbortError') throw err;
+    throw new Error('連不到中繼站。請確認網址是否正確、網路是否正常。');
+  }
+  if (res.ok) return res;
+  let msg = '';
+  try { const j = await res.json(); msg = j && j.message; } catch {}
+  if (!msg) msg = res.status === 401 ? '存取密碼錯誤。' : `中繼站回應錯誤（HTTP ${res.status}）。`;
+  const e = new Error(msg); e.status = res.status; throw e;
+}
+
+function gmWhen(s){
+  const m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(s || '');
+  return m ? `${+m[2]}/${+m[3]} ${m[4]}:${m[5]}` : (s || '');
+}
+function gmDur(sec){
+  if (!sec) return '';
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60);
+  return h ? `${h} 小時 ${m} 分` : `${m} 分`;
+}
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const gmMsg = (t, err) => { const el = $('gmMsg'); el.textContent = t || ''; el.classList.toggle('err', !!err); el.style.color = err ? 'var(--danger)' : ''; };
+
+function gmRender(){
+  const ul = $('gmList');
+  $('gmDays').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', +b.dataset.v === gm.days));
+  if (!gm.list){ ul.innerHTML = `<li class="gm-empty">${gm.busy ? '讀取活動清單中…' : ''}</li>`; return; }
+  if (!gm.list.length){ ul.innerHTML = `<li class="gm-empty">最近 ${gm.days} 天沒有活動。</li>`; return; }
+  ul.innerHTML = gm.list.map(a => {
+    const done = gmImported.has(a.id);
+    const meta = [gmWhen(a.start), GM_TYPE[a.type] || a.type, a.distance ? fmtNum(a.distance / 1000, 2) + ' km' : '', gmDur(a.movingDuration || a.duration)].filter(Boolean).join(' · ');
+    return `<li><button type="button" data-id="${esc(a.id)}" ${gm.busy ? 'disabled' : ''}>
+      <span class="n">${esc(a.name || '未命名活動')}</span><span class="tag ${done ? '' : 'new'}">${done ? '已匯入' : '新'}</span>
+      <span class="m">${esc(meta)}</span></button></li>`;
+  }).join('');
+  const fresh = gm.list.some(a => !gmImported.has(a.id));
+  $('gmLatest').disabled = gm.busy || !fresh;
+}
+
+let gmAbort = null;
+async function gmLoadList(forceFresh){
+  if (gmAbort) gmAbort.abort();
+  const ctl = gmAbort = new AbortController();
+  gm.busy = true; gm.list = null; gmMsg(''); gmRender();
+  try {
+    const res = await gmFetch(`/activities?days=${gm.days}${forceFresh ? '&fresh=1' : ''}`, {signal: ctl.signal});
+    const data = await res.json();
+    gm.list = (data.activities || []).filter(a => a && a.id);
+    const when = data.fetchedAt ? new Date(data.fetchedAt * 1000).toLocaleTimeString('zh-TW', {hour: '2-digit', minute: '2-digit'}) : '';
+    const n = gm.list.filter(a => !gmImported.has(a.id)).length;
+    gmMsg(`共 ${gm.list.length} 筆，其中 ${n} 筆尚未匯入。${data.cached && when ? `（清單更新於 ${when}，按「重新整理」可抓最新）` : ''}`);
+  } catch (err){
+    if (err && err.name === 'AbortError') return;
+    gm.list = []; gmMsg(err.message, true);
+  } finally {
+    if (gmAbort === ctl){ gmAbort = null; gm.busy = false; gmRender(); }
+  }
+}
+
+async function gmImport(id){
+  const a = (gm.list || []).find(x => x.id === id);
+  const name = (a && a.name) || `Garmin ${id}`;
+  gm.busy = true; gmRender(); gmMsg(`下載「${name}」中…`);
+  try {
+    let buf = gm.cache.get(id);
+    if (!buf){ buf = await (await gmFetch(`/fit/${encodeURIComponent(id)}`)).arrayBuffer(); gm.cache.set(id, buf); }
+    await loadActivityBuffer(buf.slice(0), name);
+    gmMarkImported(id);
+    gmClose();
+    status(`已從 Garmin 載入「${name}」`);
+  } catch (err){
+    gmMsg((err && err.message) || '無法載入這筆活動。', true);
+  } finally {
+    gm.busy = false; if (!$('gmSheet').hidden) gmRender();
+  }
+}
+
+function gmOpen(){
+  if (!gmReady()){
+    document.querySelector('.tabs button[data-tab="garmin"]').click();
+    status('請先在「Garmin」分頁填好中繼站網址和存取密碼。', true);
+    $(gmBase() ? 'gmKey' : 'gmUrl').focus();
+    return;
+  }
+  $('gmSheet').hidden = false; status('');
+  if (!gm.list || !gm.list.length) gmLoadList(false); else gmRender();
+}
+function gmClose(){ $('gmSheet').hidden = true; if (gmAbort) gmAbort.abort(); $('gmOpen').focus(); }
+
+function gmSyncSettings(){
+  if (document.activeElement !== $('gmUrl')) $('gmUrl').value = gmCfg.url || '';
+  if (document.activeElement !== $('gmKey')) $('gmKey').value = gmCfg.key || '';
+  $('gmImportedOut').textContent = gmImported.size ? `已記錄 ${gmImported.size} 筆匯入過的活動，清單裡會標「已匯入」。` : '還沒有從 Garmin 匯入過活動。';
+  $('gmClearImported').disabled = !gmImported.size;
+}
+
+$('gmOpen').addEventListener('click', gmOpen);
+$('gmClose').addEventListener('click', gmClose);
+$('gmReload').addEventListener('click', () => gmLoadList(true));
+$('gmSheet').addEventListener('click', e => { if (e.target === $('gmSheet')) gmClose(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('gmSheet').hidden){ e.stopImmediatePropagation(); gmClose(); } }, true);
+$('gmDays').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || +b.dataset.v === gm.days) return; gm.days = +b.dataset.v; gmLoadList(false); });
+$('gmList').addEventListener('click', e => { const b = e.target.closest('button[data-id]'); if (b && !gm.busy) gmImport(b.dataset.id); });
+$('gmLatest').addEventListener('click', () => {
+  const next = (gm.list || []).find(a => !gmImported.has(a.id)); // list is newest first
+  if (next) gmImport(next.id); else gmMsg('清單裡的活動都匯入過了。');
+});
+for (const [id, key] of [['gmUrl', 'url'], ['gmKey', 'key']])
+  $(id).addEventListener('input', e => { gmCfg[key] = e.target.value; gm.list = null; gm.cache.clear(); lsSet(GM_CFG_KEY, gmCfg); $('gmTestOut').textContent = ''; });
+$('gmKeyEye').addEventListener('click', () => {
+  const show = $('gmKey').type === 'password';
+  $('gmKey').type = show ? 'text' : 'password';
+  $('gmKeyEye').setAttribute('aria-pressed', show);
+  $('gmKeyEye').setAttribute('aria-label', show ? '隱藏密碼' : '顯示密碼'); $('gmKeyEye').title = show ? '隱藏密碼' : '顯示密碼';
+  $('eyeOn').hidden = show; $('eyeOff').hidden = !show;
+});
+$('gmTest').addEventListener('click', async () => {
+  const out = $('gmTestOut');
+  out.style.color = ''; out.textContent = '測試中…';
+  try {
+    const data = await (await gmFetch('/activities?days=7')).json();
+    out.textContent = `連線成功！最近 7 天有 ${(data.activities || []).length} 筆活動。`;
+  } catch (err){ out.style.color = 'var(--danger)'; out.textContent = err.message; }
+});
+$('gmClearImported').addEventListener('click', () => {
+  gmImported = new Set(); lsSet(GM_IMPORTED_KEY, []); gmSyncSettings();
+  $('gmImportedOut').textContent = '已清除匯入紀錄。';
+});
+$('appVer').textContent = '運動軌跡卡 v' + APP_VERSION;
+gmSyncSettings();
+
+/* ---------------- boot ---------------- */
+window.TraceCard = {parseFit, buildActivity, setActivity, unzipFirstFit, loadActivityBuffer, version: APP_VERSION, get act(){ return act; }, get els(){ return els; }};
+prepRoute(); updateManualNote(); changed(true);
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleRender);
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+# 機密：絕對不要 commit
+.dev.vars
+.env
+*.key
+# 工具產生的
+node_modules/
+.wrangler/
+.DS_Store

@@ -215,7 +215,7 @@ input[type=url],input[type=password],.pw input{font:15px var(--ui);padding:9px 1
       </div>
       <div class="group">
         <h3>移動時間計算方式</h3>
-        <div class="seg" id="movingSeg"><button type="button" data-v="auto">依速度自動計算</button><button type="button" data-v="timer">手錶計時時間</button></div>
+        <div class="seg" id="movingSeg"><button type="button" data-v="auto">依速度自動計算</button><button type="button" data-v="timer">計時時間</button></div>
         <p id="movingHint" class="hint"></p>
       </div>
       <div class="group">
@@ -398,7 +398,7 @@ function readField(dv, p, size, bt, le){
 
 function parseFit(buf){
   const dv = new DataView(buf);
-  const out = {sessions:[], records:[], activity:null, sport:null};
+  const out = {sessions:[], records:[], events:[], activity:null, sport:null};
   let pos = 0;
   while (pos + 12 <= buf.byteLength){
     const hs = dv.getUint8(pos);
@@ -457,6 +457,7 @@ function handleMsg(out, g, m){
     });
   } else if (g === 18) out.sessions.push(m);
   else if (g === 34) out.activity = m;
+  else if (g === 21 && m[0] === 0 && m[253] != null) out.events.push({t: m[253], type: m[1]}); // timer start / stop
   else if (g === 12 && !out.sport) out.sport = m;
 }
 
@@ -497,35 +498,79 @@ function buildActivity(f, name){
   // FIT defines session field 59 total_moving_time; use it when the device filled it in, else calculate
   const fitMoving = sum(59);
   a.movingFromFit = fitMoving != null;
-  a.moving = a.movingFromFit ? fitMoving / 1000 : movingTime(recs, a.sport);
+  a.moving = a.movingFromFit ? fitMoving / 1000 : movingTime(recs, a.sport, timerRuns(f.events));
   return a;
 }
 
-/* Moving time: add up the seconds between consecutive records only while you are actually moving.
-   - speed comes from the watch's own speed reading, or distance/time between the two records
-   - below the sport's threshold counts as stopped (traffic lights, rests, photo stops)
-   - a gap over 2 minutes between records means the timer was paused, so it is skipped */
-const MOVE_MIN = {run: 0.5, walk: 0.3, ride: 0.8}; // m/s
-function moveThreshold(sport){ return sport === 1 ? MOVE_MIN.run : (sport === 11 || sport === 17) ? MOVE_MIN.walk : MOVE_MIN.ride; }
-function movingTime(recs, sport){
-  if (recs.length < 2) return null;
-  const min = moveThreshold(sport);
-  let total = 0, any = false;
-  for (let i = 1; i < recs.length; i++){
-    const p = recs[i - 1], r = recs[i];
-    if (p.t == null || r.t == null) continue;
-    const dt = r.t - p.t;
-    if (dt <= 0 || dt > 120) continue;
-    let v = r.spd;
-    if (v == null){
-      if (p.dist != null && r.dist != null) v = (r.dist - p.dist) / dt;
-      else if (p.lat != null && r.lat != null) v = hav([p.lat, p.lon], [r.lat, r.lon]) / dt;
-      else continue;
-    }
-    any = true;
-    if (v >= min) total += dt;
+/* Timer runs from the FIT timer events: start (0) … stop (1) / stop_all (4) / stop_disable (8) / stop_disable_all (9).
+   These are exactly the stretches the watch timer was running, i.e. Garmin's 計時時間. */
+const TIMER_STOPS = new Set([1, 4, 8, 9]);
+function timerRuns(events){
+  const runs = []; let st = null;
+  for (const e of events.slice().sort((x, y) => x.t - y.t)){
+    if (e.type === 0 && st == null) st = e.t;
+    else if (TIMER_STOPS.has(e.type) && st != null){ if (e.t > st) runs.push([st, e.t]); st = null; }
   }
-  return any ? total : null;
+  if (st != null) runs.push([st, Infinity]);
+  return runs;
+}
+
+/* Moving time: count the seconds you were actually moving while the timer ran.
+   - pauses come from the watch's timer events; files without them fall back to "a gap over 2 minutes = paused"
+   - the watch's instant speed is NOT used: on slow, steep hiking it often reads 0 while you are walking
+   - instead speed is measured over a 60-second window: horizontal distance, and for on-foot sports the climb rate too,
+     so a slow, steep ascent still counts as moving
+   - below the sport's threshold counts as stopped (rests, photo stops, traffic lights) */
+const MOVE_WINDOW = 60;                               // s
+const MOVE_MIN = {run: 0.5, walk: 0.2, ride: 0.8};    // m/s horizontal
+const CLIMB_MIN = 0.05;                               // m/s vertical (180 m/h), on-foot sports only
+const onFoot = sport => sport === 1 || sport === 11 || sport === 17;
+function moveThreshold(sport){ return sport === 1 ? MOVE_MIN.run : (sport === 11 || sport === 17) ? MOVE_MIN.walk : MOVE_MIN.ride; }
+function movingTime(recs, sport, runs = []){
+  const R = recs.filter(r => r.t != null).sort((x, y) => x.t - y.t);
+  if (R.length < 2) return null;
+  // segment id per record: which timer run it falls in (-1 = timer stopped)
+  const seg = new Array(R.length);
+  if (runs.length){
+    let k = 0;
+    for (let i = 0; i < R.length; i++){
+      while (k < runs.length && R[i].t > runs[k][1] + 1) k++;
+      seg[i] = (k < runs.length && R[i].t >= runs[k][0] - 1) ? k : -1;
+    }
+  } else {
+    let id = 0; seg[0] = 0;
+    for (let i = 1; i < R.length; i++){ if (R[i].t - R[i - 1].t > 120) id++; seg[i] = id; }
+  }
+  // cumulative horizontal distance: the watch's own distance when present, else GPS steps
+  const D = new Array(R.length); let acc = 0, haveAny = false;
+  for (let i = 0; i < R.length; i++){
+    const r = R[i], p = R[i - 1];
+    if (i && r.dist != null && p.dist != null) acc += Math.max(0, r.dist - p.dist);
+    else if (i && r.lat != null && p.lat != null) acc += hav([p.lat, p.lon], [r.lat, r.lon]);
+    if (r.dist != null || r.lat != null) haveAny = true;
+    D[i] = acc;
+  }
+  if (!haveAny) return null;
+  const minH = moveThreshold(sport), climb = onFoot(sport);
+  let total = 0, start = 0, lo = 0, hi = 0;
+  for (let i = 1; i < R.length; i++){
+    if (seg[i] !== seg[i - 1]){ start = i; continue; }   // a new timer run starts at i
+    if (seg[i] < 0) continue;
+    const dt = R[i].t - R[i - 1].t;
+    if (dt <= 0) continue;
+    // window [t0, t1] around this interval, kept inside the same timer run (records are contiguous per run)
+    const t0 = R[i].t - MOVE_WINDOW / 2, t1 = R[i - 1].t + MOVE_WINDOW / 2;
+    if (lo < start) lo = start;
+    while (lo < i - 1 && R[lo].t < t0) lo++;
+    if (hi < i) hi = i;
+    while (hi + 1 < R.length && seg[hi + 1] === seg[i] && R[hi + 1].t <= t1) hi++;
+    const span = R[hi].t - R[lo].t;
+    if (span <= 0) continue;
+    const vh = (D[hi] - D[lo]) / span;
+    const vv = climb && R[hi].alt != null && R[lo].alt != null ? Math.abs(R[hi].alt - R[lo].alt) / span : 0;
+    if (vh >= minH || vv >= CLIMB_MIN) total += dt;
+  }
+  return total;
 }
 /* the time and speed the card shows, following the chosen moving-time mode */
 const movingSec = a => (S.movingMode === 'auto' && a.moving) ? a.moving : a.timer;
@@ -602,6 +647,7 @@ const SPORT = {0:'一般',1:'跑步',2:'自行車',4:'健身器材',5:'游泳',1
 const STATS = [
   {k:'distance', en:'Distance', zh:'距離', get:a => a.distance > 0 ? [fmtNum(a.distance / 1000, 2), 'km'] : null},
   {k:'moving', en:'Moving Time', zh:'移動時間', get:a => movingSec(a) ? [fmtDur(movingSec(a)), ''] : null},
+  {k:'timer', en:'Timer Time', zh:'計時時間', get:a => a.timer ? [fmtDur(a.timer), ''] : null},
   {k:'elapsed', en:'Elapsed Time', zh:'總時間', get:a => a.elapsed ? [fmtDur(a.elapsed), ''] : null},
   {k:'pace', en:'Pace', zh:'配速', get:a => a.distance > 100 && movingSec(a) ? [fmtPace(movingSec(a) / (a.distance / 1000)), '/km'] : null},
   {k:'speed', en:'Avg Speed', zh:'平均速度', get:a => avgSpeedOf(a) ? [fmtNum(avgSpeedOf(a) * 3.6, 1), 'km/h'] : null},
@@ -649,7 +695,8 @@ const DEF = {
 const KEY = 'trace-card-v1';
 let S = structuredClone(DEF);
 try { const saved = JSON.parse(localStorage.getItem(KEY) || 'null'); if (saved) S = Object.assign(S, saved); } catch {}
-for (const k of STATS.map(s => s.k)) if (!S.order.includes(k)) S.order.push(k);
+// stats added in a later version slot in right after the stat that precedes them in STATS, so saved orders stay sensible
+STATS.forEach((st, i) => { if (S.order.includes(st.k)) return; const prev = i ? S.order.indexOf(STATS[i - 1].k) : -1; S.order.splice(prev + 1, 0, st.k); });
 let saveT = 0;
 function save(){ clearTimeout(saveT); saveT = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} }, 300); }
 
@@ -1166,12 +1213,12 @@ function syncUI(){
   const pressed = (id, v) => $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
   pressed('alignToSeg', S.alignTo); pressed('movingSeg', S.movingMode);
   {
-    const th = (moveThreshold(act.sport) * 3.6).toFixed(1);
+    const th = (moveThreshold(act.sport) * 3.6).toFixed(1), climbTxt = onFoot(act.sport) ? `、而且每小時爬升或下降不到 ${CLIMB_MIN * 3600} m` : '';
     const parts = [];
     if (act.moving && act.movingFromFit) parts.push(`活動檔內的移動時間：${fmtDur(act.moving)}（裝置自己記錄的）`);
-    else if (act.moving) parts.push(`依速度計算：${fmtDur(act.moving)}（速度低於 ${th} km/h 算停下來）`);
-    else parts.push('這個活動沒有逐秒紀錄，無法依速度計算，會改用手錶計時時間。');
-    if (act.timer) parts.push(`手錶計時：${fmtDur(act.timer)}（按下暫停或自動暫停的時間不算）`);
+    else if (act.moving) parts.push(`依速度計算：${fmtDur(act.moving)}（以 1 分鐘為單位，水平速度低於 ${th} km/h${climbTxt}，算停下來）`);
+    else parts.push('這個活動沒有逐秒紀錄，無法依速度計算，會改用計時時間。');
+    if (act.timer) parts.push(`計時時間：${fmtDur(act.timer)}（等於 Garmin 的「時間」，按暫停的時間不算）`);
     if (act.elapsed) parts.push(`總時間：${fmtDur(act.elapsed)}（從開始到結束）`);
     $('movingHint').innerHTML = parts.join('<br>');
   } pressed('langSeg', S.lang); pressed('timeSeg', S.timeFmt); pressed('sizeSeg', S.size); pressed('bgSeg', S.bg); pressed('presetGrid', S.preset);
@@ -1288,7 +1335,7 @@ function showSaveSheet(blob){
 $('saveClose').addEventListener('click', () => { $('saveSheet').hidden = true; URL.revokeObjectURL($('saveImg').src); $('saveImg').removeAttribute('src'); });
 
 /* ---------------- Garmin relay (Cloudflare Worker) ---------------- */
-const APP_VERSION = '1.1.1';
+const APP_VERSION = '1.2.0';
 const GM_CFG_KEY = 'trace-card-garmin';      // {url, key} — this device only, never in git
 const GM_IMPORTED_KEY = 'trace-card-imported'; // activityIds already loaded
 const GM_IMPORTED_MAX = 2000;

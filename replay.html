@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>3D 軌跡回放</title>
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#111512">
+<link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.33.0/mapbox-gl.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;800&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* Layout: full-screen 3D map; a slim top bar and a bottom data panel float over it */
+:root{
+  --bg:#111512; --panel:rgba(17,21,18,.86); --solid:#1A1F1B; --fg:#E5EBE6; --muted:#97A49A; --line:#2D352F;
+  --accent:#FC5200; --ok:#7DC597; --danger:#EE8A77;
+  --ui:"Noto Sans TC",system-ui,sans-serif; --num:"Barlow Condensed","Noto Sans TC",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.45 var(--ui);overflow:hidden}
+[hidden]{display:none!important}
+#map{position:fixed;inset:0}
+.top{position:fixed;z-index:5;top:max(10px,env(safe-area-inset-top));left:max(10px,env(safe-area-inset-left));right:max(10px,env(safe-area-inset-right));display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.title{flex:1;min-width:0;font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+.btn{font:600 14px/1 var(--ui);padding:10px 14px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;backdrop-filter:blur(6px)}
+.btn:hover{border-color:var(--muted)}
+a.btn{text-decoration:none}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+.panel{position:fixed;z-index:5;left:max(10px,env(safe-area-inset-left));right:max(10px,env(safe-area-inset-right));bottom:max(10px,env(safe-area-inset-bottom));background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;backdrop-filter:blur(8px);max-width:880px;margin:0 auto}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px 10px}
+.stat .l{font-size:12px;color:var(--muted)}
+.stat .v{font:800 26px/1.1 var(--num);font-variant-numeric:tabular-nums;white-space:nowrap}
+.stat .v small{font-size:15px;font-weight:600;margin-left:3px;color:var(--muted)}
+#prof{display:block;width:100%;height:64px;margin-top:8px;cursor:pointer;touch-action:none}
+.ctrl{display:flex;align-items:center;gap:10px;margin-top:8px}
+.ctrl input[type=range]{flex:1;accent-color:var(--accent)}
+.ctrl select{font:14px var(--ui);background:var(--solid);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px}
+.play{width:44px;height:44px;border-radius:50%;border:0;background:var(--accent);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none}
+.play svg{width:20px;height:20px;fill:currentColor}
+.status{position:fixed;z-index:6;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;max-width:min(420px,calc(100% - 32px));text-align:center}
+.status.err{border-color:var(--danger)}
+.sheet{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:16px}
+.card{background:var(--solid);border:1px solid var(--line);border-radius:12px;padding:18px;width:min(440px,100%);max-height:100%;overflow:auto;display:flex;flex-direction:column;gap:12px}
+.card h2{margin:0;font-size:18px}
+.card p{margin:0;color:var(--muted);font-size:14px}
+.card a{color:var(--ok)}
+.pw{position:relative;display:flex}
+.pw input{width:100%;font:15px var(--ui);padding:10px 46px 10px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg)}
+.pw button{position:absolute;right:2px;top:2px;bottom:2px;width:42px;border:0;background:none;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.pw svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.list{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:8px;max-height:50vh;overflow:auto}
+.list button{width:100%;text-align:left;padding:10px 12px;border:0;border-bottom:1px solid var(--line);background:none;color:var(--fg);cursor:pointer;font:inherit}
+.list li:last-child button{border-bottom:0}
+.list button:hover{background:rgba(255,255,255,.05)}
+.list .m{display:block;font-size:12px;color:var(--muted);font-family:var(--num)}
+.dot{width:18px;height:18px;border-radius:50%;background:var(--accent);border:3px solid #fff;box-shadow:0 0 0 6px rgba(252,82,0,.35),0 2px 6px rgba(0,0,0,.5)}
+@media (prefers-reduced-motion:no-preference){.dot{animation:pulse 1.6s ease-out infinite}}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(252,82,0,.55),0 2px 6px rgba(0,0,0,.5)}100%{box-shadow:0 0 0 14px rgba(252,82,0,0),0 2px 6px rgba(0,0,0,.5)}}
+@media (max-width:640px){
+  .stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .stat .v{font-size:22px}
+  .stat.opt{display:none}
+  .btn{padding:8px 10px;font-size:13px}
+}
+</style>
+</head>
+<body>
+<div id="map" aria-label="3D 地圖"></div>
+
+<div class="top">
+  <a class="btn" href="./" title="回到運動軌跡卡">← 軌跡卡</a>
+  <span id="actTitle" class="title">3D 軌跡回放</span>
+  <label class="btn" for="fitIn">載入 .fit</label>
+  <input id="fitIn" type="file" accept=".fit,.zip,application/zip,application/octet-stream" hidden>
+  <button id="gmBtn" class="btn" type="button" hidden>從 Garmin 抓取</button>
+  <button id="tokenBtn" class="btn" type="button" title="Mapbox 金鑰設定">金鑰</button>
+</div>
+
+<div id="msg" class="status" role="status" hidden></div>
+
+<section id="panel" class="panel" aria-label="運動數據" hidden>
+  <div class="stats">
+    <div class="stat"><div class="l">距離</div><div class="v" id="vDist">0.00<small>km</small></div></div>
+    <div class="stat"><div class="l">計時時間</div><div class="v" id="vTime">0:00:00</div></div>
+    <div class="stat"><div class="l">海拔</div><div class="v" id="vAlt">—<small>m</small></div></div>
+    <div class="stat opt"><div class="l">累計爬升</div><div class="v" id="vAsc">0<small>m</small></div></div>
+    <div class="stat opt"><div class="l">心率</div><div class="v" id="vHr">—<small>bpm</small></div></div>
+  </div>
+  <canvas id="prof" aria-label="海拔剖面，點一下可以跳到該位置"></canvas>
+  <div class="ctrl">
+    <button id="playBtn" class="play" type="button" aria-label="播放">
+      <svg id="icPlay" viewBox="0 0 24 24"><path d="M7 4.5v15l12.5-7.5z"/></svg>
+      <svg id="icPause" viewBox="0 0 24 24" hidden><path d="M6 4h4.5v16H6zM13.5 4H18v16h-4.5z"/></svg>
+    </button>
+    <input id="seek" type="range" min="0" max="1000" value="0" aria-label="播放進度">
+    <select id="durSel" aria-label="動畫長度">
+      <option value="30">30 秒</option><option value="60" selected>60 秒</option><option value="120">2 分鐘</option>
+    </select>
+  </div>
+</section>
+
+<div id="tokenSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="tkTitle">
+  <div class="card">
+    <h2 id="tkTitle">貼上 Mapbox 金鑰</h2>
+    <p>到 <a href="https://console.mapbox.com/account/access-tokens/" target="_blank" rel="noopener">Mapbox 金鑰頁面</a>，複製「Default public token」（<code>pk.</code> 開頭）貼在下面。金鑰只存在這台裝置的瀏覽器裡，不會上傳到 GitHub。</p>
+    <div class="pw">
+      <input id="tokenIn" type="password" autocomplete="off" spellcheck="false" placeholder="pk.…">
+      <button id="tokenEye" type="button" aria-label="顯示金鑰" aria-pressed="false">
+        <svg id="eyeOn" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+        <svg id="eyeOff" viewBox="0 0 24 24" hidden><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a10 10 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>
+      </button>
+    </div>
+    <p id="tokenErr" style="color:var(--danger)" hidden></p>
+    <div class="row"><button id="tokenCancel" class="btn" type="button">取消</button><button id="tokenSave" class="btn primary" type="button">儲存並開始</button></div>
+  </div>
+</div>
+
+<div id="gmSheet" class="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="gmTitle">
+  <div class="card">
+    <h2 id="gmTitle">從 Garmin 抓取</h2>
+    <p id="gmMsg">讀取最近 30 天的活動…</p>
+    <ul id="gmList" class="list"></ul>
+    <div class="row"><button id="gmClose" class="btn" type="button">關閉</button></div>
+  </div>
+</div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.33.0/mapbox-gl.js"></script>
+<script>
+'use strict';
+const APP_VERSION = '1.3.0-beta';
+/* ---------------- FIT parsing (same code as index.html) ---------------- */
+const FIT_EPOCH = 631065600;
+const BT_SIZE = {0:1,1:1,2:1,3:2,4:2,5:4,6:4,7:1,8:4,9:8,10:1,11:2,12:4,13:1,14:8,15:8,16:8};
+const td = new TextDecoder('utf-8');
+
+function readField(dv, p, size, bt, le){
+  const t = bt & 0x1f;
+  if (t === 7){
+    const bytes = new Uint8Array(dv.buffer, dv.byteOffset + p, size);
+    let n = bytes.indexOf(0); if (n < 0) n = size;
+    return td.decode(bytes.subarray(0, n)) || null;
+  }
+  const ts = BT_SIZE[t] || 1;
+  if (size < ts) return null;
+  let v;
+  switch (t){
+    case 0: case 2: case 13: v = dv.getUint8(p); return v === 0xFF ? null : v;
+    case 10: v = dv.getUint8(p); return v === 0 ? null : v;
+    case 1: v = dv.getInt8(p); return v === 0x7F ? null : v;
+    case 3: v = dv.getInt16(p, le); return v === 0x7FFF ? null : v;
+    case 4: v = dv.getUint16(p, le); return v === 0xFFFF ? null : v;
+    case 11: v = dv.getUint16(p, le); return v === 0 ? null : v;
+    case 5: v = dv.getInt32(p, le); return v === 0x7FFFFFFF ? null : v;
+    case 6: v = dv.getUint32(p, le); return v === 0xFFFFFFFF ? null : v;
+    case 12: v = dv.getUint32(p, le); return v === 0 ? null : v;
+    case 8: v = dv.getFloat32(p, le); return Number.isFinite(v) ? v : null;
+    case 9: v = dv.getFloat64(p, le); return Number.isFinite(v) ? v : null;
+    case 14: v = dv.getBigInt64(p, le); return v === 0x7FFFFFFFFFFFFFFFn ? null : Number(v);
+    case 15: v = dv.getBigUint64(p, le); return v === 0xFFFFFFFFFFFFFFFFn ? null : Number(v);
+    case 16: v = dv.getBigUint64(p, le); return v === 0n ? null : Number(v);
+  }
+  return null;
+}
+
+function parseFit(buf){
+  const dv = new DataView(buf);
+  const out = {sessions:[], records:[], events:[], activity:null, sport:null};
+  let pos = 0;
+  while (pos + 12 <= buf.byteLength){
+    const hs = dv.getUint8(pos);
+    const dataSize = dv.getUint32(pos + 4, true);
+    const sig = String.fromCharCode(dv.getUint8(pos+8), dv.getUint8(pos+9), dv.getUint8(pos+10), dv.getUint8(pos+11));
+    if (sig !== '.FIT') { if (pos === 0) throw new Error('這不是有效的 FIT 檔。'); break; }
+    let p = pos + hs;
+    const end = Math.min(p + dataSize, buf.byteLength);
+    const defs = {};
+    let lastTs = 0;
+    while (p < end){
+      const h = dv.getUint8(p++);
+      let local, cts = null;
+      if (h & 0x80){
+        local = (h >> 5) & 3;
+        const off = h & 0x1f;
+        cts = lastTs + ((off - lastTs) & 0x1f);
+        lastTs = cts;
+      } else if (h & 0x40){
+        local = h & 0x0f;
+        const hasDev = h & 0x20;
+        p++; // reserved
+        const le = dv.getUint8(p++) === 0;
+        const gnum = dv.getUint16(p, le); p += 2;
+        const n = dv.getUint8(p++);
+        const fields = [];
+        for (let i = 0; i < n; i++){ fields.push([dv.getUint8(p), dv.getUint8(p+1), dv.getUint8(p+2)]); p += 3; }
+        let devSize = 0;
+        if (hasDev){ const nd = dv.getUint8(p++); for (let i = 0; i < nd; i++){ devSize += dv.getUint8(p+1); p += 3; } }
+        defs[local] = {gnum, le, fields, devSize};
+        continue;
+      } else {
+        local = h & 0x0f;
+      }
+      const d = defs[local];
+      if (!d) throw new Error('FIT 檔內容不完整，無法讀取。');
+      const m = {};
+      for (const [num, size, bt] of d.fields){ m[num] = readField(dv, p, size, bt, d.le); p += size; }
+      p += d.devSize;
+      if (m[253] != null) lastTs = m[253]; else if (cts != null) m[253] = cts;
+      handleMsg(out, d.gnum, m);
+    }
+    pos = end + 2;
+  }
+  return out;
+}
+
+
+/* zip: Garmin's 匯出檔案 gives a .zip holding the .fit */
+async function unzipFirstFit(buf){
+  const dv = new DataView(buf);
+  let e = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 66000); i--){ if (dv.getUint32(i, true) === 0x06054b50){ e = i; break; } }
+  if (e < 0) throw new Error('壓縮檔格式無法辨識。');
+  const count = dv.getUint16(e + 10, true);
+  let p = dv.getUint32(e + 16, true);
+  for (let i = 0; i < count; i++){
+    const method = dv.getUint16(p + 10, true);
+    const csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const loff = dv.getUint32(p + 42, true);
+    const fname = td.decode(new Uint8Array(buf, p + 46, nlen));
+    p += 46 + nlen + xlen + clen;
+    if (!/\.fit$/i.test(fname)) continue;
+    const start = loff + 30 + dv.getUint16(loff + 26, true) + dv.getUint16(loff + 28, true);
+    const data = new Uint8Array(buf, start, csize);
+    if (method === 0) return {name: fname, buf: data.slice().buffer};
+    if (method === 8){
+      if (typeof DecompressionStream === 'undefined') throw new Error('這個瀏覽器無法解壓縮，請先解壓縮後載入 .fit 檔。');
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return {name: fname, buf: await new Response(stream).arrayBuffer()};
+    }
+    throw new Error('不支援這種壓縮方式，請先解壓縮。');
+  }
+  throw new Error('壓縮檔裡沒有 .fit 檔。');
+}
+
+
+function hav(a, b){
+  const R = 6371000, toR = Math.PI / 180;
+  const dLa = (b[0] - a[0]) * toR, dLo = (b[1] - a[1]) * toR;
+  const x = Math.sin(dLa/2) ** 2 + Math.cos(a[0]*toR) * Math.cos(b[0]*toR) * Math.sin(dLo/2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+
+/* Timer runs from the FIT timer events: start (0) … stop (1) / stop_all (4) / stop_disable (8) / stop_disable_all (9).
+   These are exactly the stretches the watch timer was running, i.e. Garmin's 計時時間. */
+const TIMER_STOPS = new Set([1, 4, 8, 9]);
+function timerRuns(events){
+  const runs = []; let st = null;
+  for (const e of events.slice().sort((x, y) => x.t - y.t)){
+    if (e.type === 0 && st == null) st = e.t;
+    else if (TIMER_STOPS.has(e.type) && st != null){ if (e.t > st) runs.push([st, e.t]); st = null; }
+  }
+  if (st != null) runs.push([st, Infinity]);
+  return runs;
+}
+
+
+const SC = 180 / 2147483648;
+function handleMsg(out, g, m){
+  if (g === 20){
+    const alt = m[78] != null ? m[78] / 5 - 500 : (m[2] != null ? m[2] / 5 - 500 : null);
+    out.records.push({t: m[253], lat: m[0] != null ? m[0] * SC : null, lon: m[1] != null ? m[1] * SC : null, alt,
+      dist: m[5] != null ? m[5] / 100 : null, hr: m[3] ?? null});
+  } else if (g === 18) out.sessions.push(m);
+  else if (g === 21 && m[0] === 0 && m[253] != null) out.events.push({t: m[253], type: m[1]});
+}
+
+/* ---------------- track: the activity on a "timer time" axis ----------------
+   Every GPS record that falls inside a timer run gets tt = seconds of timer time so far.
+   The animation walks tt from 0 to the total, so pauses (lunch, the night in the cabin) are skipped. */
+function buildTrack(fit, name){
+  const runs = timerRuns(fit.events);
+  let R = fit.records.filter(r => r.t != null && r.lat != null && r.lon != null && Math.abs(r.lat) <= 90 && Math.abs(r.lon) <= 180 && !(r.lat === 0 && r.lon === 0))
+    .sort((a, b) => a.t - b.t);
+  if (R.length < 2) throw new Error('這個活動沒有 GPS 軌跡（可能是室內活動），無法做 3D 回放。');
+  // which timer run each record belongs to; without timer events, a gap over 2 minutes counts as a pause
+  const seg = new Array(R.length);
+  if (runs.length){
+    let k = 0;
+    for (let i = 0; i < R.length; i++){
+      while (k < runs.length && R[i].t > runs[k][1] + 1) k++;
+      seg[i] = (k < runs.length && R[i].t >= runs[k][0] - 1) ? k : -1;
+    }
+  } else { let id = 0; seg[0] = 0; for (let i = 1; i < R.length; i++){ if (R[i].t - R[i - 1].t > 120) id++; seg[i] = id; } }
+  const keep = R.map((_, i) => seg[i] >= 0);
+  R = R.filter((_, i) => keep[i]); const sg = seg.filter((_, i) => keep[i]);
+  if (R.length < 2) throw new Error('計時期間沒有 GPS 紀錄。');
+  const n = R.length, tt = new Float64Array(n), D = new Float64Array(n), asc = new Float64Array(n), alt = new Float64Array(n);
+  let ref = null;
+  for (let i = 0; i < n; i++){
+    const r = R[i], p = R[i - 1];
+    if (i){
+      tt[i] = tt[i - 1] + (sg[i] === sg[i - 1] ? Math.max(0, r.t - p.t) : 0);
+      const dd = (r.dist != null && p.dist != null) ? r.dist - p.dist : hav([p.lat, p.lon], [r.lat, r.lon]);
+      D[i] = D[i - 1] + Math.max(0, dd);
+      asc[i] = asc[i - 1];
+    }
+    alt[i] = r.alt ?? (i ? alt[i - 1] : NaN);
+    if (r.alt != null){ // same 3 m hysteresis as the card's ascent fallback
+      if (ref == null) ref = r.alt;
+      else if (r.alt - ref > 3){ asc[i] += r.alt - ref; ref = r.alt; } else if (ref - r.alt > 3) ref = r.alt;
+    }
+  }
+  for (let i = n - 2; i >= 0; i--) if (Number.isNaN(alt[i])) alt[i] = alt[i + 1]; // leading gaps
+  const s = fit.sessions[0] || {};
+  const sessionAsc = fit.sessions.reduce((a, x) => x[22] != null ? (a ?? 0) + x[22] : a, null);
+  const sessionTimer = fit.sessions.reduce((a, x) => x[8] != null ? (a ?? 0) + x[8] / 1000 : a, null);
+  const T = {name, R, tt, D, asc, alt, n, total: tt[n - 1], dist: D[n - 1],
+    ascScale: sessionAsc && asc[n - 1] ? sessionAsc / asc[n - 1] : 1, // match the watch's own total ascent
+    // the watch's timer also runs between pressing start and the first GPS fix (and after the last one): stretch to its total
+    timeScale: sessionTimer && tt[n - 1] ? sessionTimer / tt[n - 1] : 1,
+    hasAlt: R.some(r => r.alt != null), hasHr: R.some(r => r.hr != null)};
+  // simplified line for drawing: one point every few metres keeps a 15,000-point hike smooth and light
+  const step = Math.max(4, T.dist / 2500);
+  const line = [], lineD = []; let last = -Infinity;
+  for (let i = 0; i < n; i++) if (D[i] - last >= step || i === n - 1){ line.push([R[i].lon, R[i].lat]); lineD.push(D[i]); last = D[i]; }
+  T.line = line; T.lineD = lineD;
+  let w = 180, e = -180, so = 90, no = -90;
+  for (const [x, y] of line){ w = Math.min(w, x); e = Math.max(e, x); so = Math.min(so, y); no = Math.max(no, y); }
+  T.bounds = [[w, so], [e, no]];
+  return T;
+}
+// index i with arr[i] <= v < arr[i+1]
+function seekIdx(arr, v){ let lo = 0, hi = arr.length - 1; if (v <= arr[0]) return 0; if (v >= arr[hi]) return hi; while (hi - lo > 1){ const m = (lo + hi) >> 1; if (arr[m] <= v) lo = m; else hi = m; } return lo; }
+function stateAtTime(T, t){
+  const i = seekIdx(T.tt, t), j = Math.min(i + 1, T.n - 1), span = T.tt[j] - T.tt[i], f = span > 0 ? (t - T.tt[i]) / span : 0;
+  const a = T.R[i], b = T.R[j], L = (x, y) => x + (y - x) * f;
+  return {lon: L(a.lon, b.lon), lat: L(a.lat, b.lat), alt: L(T.alt[i], T.alt[j]), d: L(T.D[i], T.D[j]),
+    asc: T.asc[i] * T.ascScale, hr: (f < .5 ? a.hr : b.hr) ?? a.hr ?? b.hr, t, shown: t * T.timeScale};
+}
+function pointAtDist(T, d){
+  d = Math.max(0, Math.min(T.dist, d));
+  const i = seekIdx(T.D, d), j = Math.min(i + 1, T.n - 1), span = T.D[j] - T.D[i], f = span > 0 ? (d - T.D[i]) / span : 0;
+  return [T.R[i].lon + (T.R[j].lon - T.R[i].lon) * f, T.R[i].lat + (T.R[j].lat - T.R[i].lat) * f];
+}
+
+/* ---------------- geo helpers ---------------- */
+const toR = Math.PI / 180, toD = 180 / Math.PI;
+function bearingDeg([lo1, la1], [lo2, la2]){
+  const y = Math.sin((lo2 - lo1) * toR) * Math.cos(la2 * toR);
+  const x = Math.cos(la1 * toR) * Math.sin(la2 * toR) - Math.sin(la1 * toR) * Math.cos(la2 * toR) * Math.cos((lo2 - lo1) * toR);
+  return (Math.atan2(y, x) * toD + 360) % 360;
+}
+function destination([lo, la], brg, m){
+  const R = 6371000, d = m / R, b = brg * toR, p1 = la * toR, l1 = lo * toR;
+  const p2 = Math.asin(Math.sin(p1) * Math.cos(d) + Math.cos(p1) * Math.sin(d) * Math.cos(b));
+  const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(d) * Math.cos(p1), Math.cos(d) - Math.sin(p1) * Math.sin(p2));
+  return [l2 * toD, p2 * toD];
+}
+const angleDiff = (a, b) => ((a - b + 540) % 360) - 180;
+
+/* ---------------- formatting ---------------- */
+const pad = n => String(n).padStart(2, '0');
+const fmtDur = s => { s = Math.round(s); return `${Math.floor(s / 3600)}:${pad(Math.floor(s % 3600 / 60))}:${pad(s % 60)}`; };
+const fmtNum = (v, d) => v.toLocaleString('en-US', {minimumFractionDigits: d, maximumFractionDigits: d});
+const $ = id => document.getElementById(id);
+
+/* ---------------- settings kept on this device only ---------------- */
+const TOKEN_KEY = 'trace-card-mapbox-token', GM_KEY = 'trace-card-garmin';
+const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+
+/* ---------------- map ---------------- */
+let map = null, mapReady = false, marker = null, track = null;
+const CAM = {dist: 1100, height: 520, minClear: 120, lookBack: 60, lookAhead: 350, turn: 1.6}; // metres / per-second smoothing
+const cam = {brg: null, alt: null};
+const msg = (text, err) => { const el = $('msg'); el.hidden = !text; el.textContent = text || ''; el.classList.toggle('err', !!err); };
+
+function initMap(token){
+  if (map) return; // one Map per page = one billed map load; replays reuse it
+  if (!window.mapboxgl){ msg('Mapbox 程式載入失敗，請檢查網路後重新整理。', true); return; }
+  mapboxgl.accessToken = token;
+  map = new mapboxgl.Map({container: 'map', style: 'mapbox://styles/mapbox/satellite-streets-v12', center: [121, 23.7], zoom: 6.5, pitch: 0, attributionControl: true});
+  map.on('error', e => {
+    const st = e && e.error && e.error.status;
+    if (st === 401 || st === 403){ msg('Mapbox 金鑰無效或沒有權限，請按右上角「金鑰」重新貼上。', true); }
+  });
+  map.on('style.load', () => {
+    map.addSource('dem', {type: 'raster-dem', url: 'mapbox://mapbox.mapbox-terrain-dem-v1', tileSize: 512, maxzoom: 14});
+    map.setTerrain({source: 'dem', exaggeration: 1.4});
+    map.setFog({range: [1, 12], color: 'rgb(220,228,240)', 'high-color': 'rgb(36,92,223)', 'horizon-blend': 0.06, 'space-color': 'rgb(11,11,25)', 'star-intensity': 0.1});
+    map.addSource('route', {type: 'geojson', lineMetrics: true, data: emptyLine()});
+    map.addLayer({id: 'route-all', type: 'line', source: 'route', layout: {'line-join': 'round', 'line-cap': 'round'}, paint: {'line-color': '#ffffff', 'line-opacity': 0.55, 'line-width': 3}});
+    map.addLayer({id: 'route-done', type: 'line', source: 'route', layout: {'line-join': 'round', 'line-cap': 'round'}, paint: {'line-color': '#FC5200', 'line-width': 6, 'line-trim-offset': [0, 1]}});
+    mapReady = true;
+    if (track) showTrack();
+  });
+  const el = document.createElement('div'); el.className = 'dot';
+  marker = new mapboxgl.Marker({element: el});
+}
+const emptyLine = () => ({type: 'Feature', properties: {}, geometry: {type: 'LineString', coordinates: []}});
+
+function showTrack(){
+  if (!mapReady || !track) return;
+  map.getSource('route').setData({type: 'Feature', properties: {}, geometry: {type: 'LineString', coordinates: track.line}});
+  setDone(0);
+  const s = stateAtTime(track, 0);
+  marker.setLngLat([s.lon, s.lat]).addTo(map);
+  overview(false);
+}
+function overview(animate){
+  map.fitBounds(track.bounds, {padding: {top: 70, bottom: panelH() + 30, left: 40, right: 40}, pitch: 55, bearing: -15, duration: animate ? 2500 : 0, maxZoom: 15});
+}
+const panelH = () => $('panel').hidden ? 0 : $('panel').getBoundingClientRect().height;
+// hide the not-yet-walked part of the orange line (line-trim-offset trims [start, end] as fractions of the line)
+function setDone(frac){ map.setPaintProperty('route-done', 'line-trim-offset', [Math.min(0.99999, Math.max(0, frac)), 1]); }
+function doneFrac(d){ return track.dist > 0 ? d / track.dist : 0; }
+
+/* chase camera: sits behind the dot along the smoothed walking direction, never below the ground */
+function chase(s, dt, snap){
+  const here = [s.lon, s.lat];
+  const target = bearingDeg(pointAtDist(track, s.d - CAM.lookBack), pointAtDist(track, s.d + CAM.lookAhead));
+  if (cam.brg == null || snap) cam.brg = target;
+  else cam.brg = (cam.brg + angleDiff(target, cam.brg) * (1 - Math.exp(-dt * CAM.turn)) + 360) % 360;
+  const camLL = destination(here, cam.brg + 180, CAM.dist);
+  const gT = map.queryTerrainElevation(here) ?? s.alt ?? 0;
+  const gC = map.queryTerrainElevation(camLL) ?? gT;
+  const want = Math.max(gT + CAM.height, gC + CAM.minClear);
+  cam.alt = (cam.alt == null || snap) ? want : cam.alt + (want - cam.alt) * (1 - Math.exp(-dt * 2));
+  const fc = map.getFreeCameraOptions();
+  fc.position = mapboxgl.MercatorCoordinate.fromLngLat({lng: camLL[0], lat: camLL[1]}, cam.alt);
+  fc.lookAtPoint({lng: here[0], lat: here[1]});
+  map.setFreeCameraOptions(fc);
+}
+
+/* ---------------- playback ---------------- */
+const play = {on: false, p: 0, last: 0, raf: 0};
+function render(dt, snap){
+  if (!track) return;
+  const s = stateAtTime(track, play.p * track.total);
+  updatePanel(s);
+  if (!mapReady) return;
+  marker.setLngLat([s.lon, s.lat]);
+  setDone(doneFrac(s.d));
+  if (play.on || snap) chase(s, dt, snap);
+}
+function tick(now){
+  if (!play.on) return;
+  const dt = Math.min(0.1, (now - play.last) / 1000); play.last = now;
+  const dur = +$('durSel').value;
+  play.p = Math.min(1, play.p + dt / dur);
+  render(dt, false);
+  if (play.p >= 1){ setPlaying(false); setTimeout(() => { if (!play.on) overview(true); }, 600); return; }
+  play.raf = requestAnimationFrame(tick);
+}
+function setPlaying(on){
+  play.on = on;
+  $('icPlay').hidden = on; $('icPause').hidden = !on; $('playBtn').setAttribute('aria-label', on ? '暫停' : '播放');
+  cancelAnimationFrame(play.raf);
+  if (on){
+    if (play.p >= 1) play.p = 0;
+    cam.brg = null; cam.alt = null;
+    render(0, true);
+    play.last = performance.now(); play.raf = requestAnimationFrame(tick);
+  }
+}
+function seekTo(p){ play.p = Math.max(0, Math.min(1, p)); render(0, play.on || mapReady); if (!play.on && mapReady) chase(stateAtTime(track, play.p * track.total), 0, true); }
+
+/* ---------------- data panel ---------------- */
+function updatePanel(s){
+  $('vDist').innerHTML = `${fmtNum(s.d / 1000, 2)}<small>km</small>`;
+  $('vTime').textContent = fmtDur(s.shown);
+  $('vAlt').innerHTML = `${track.hasAlt && Number.isFinite(s.alt) ? Math.round(s.alt).toLocaleString('en-US') : '—'}<small>m</small>`;
+  $('vAsc').innerHTML = `${Math.round(s.asc).toLocaleString('en-US')}<small>m</small>`;
+  $('vHr').innerHTML = `${s.hr ?? '—'}<small>bpm</small>`;
+  if (document.activeElement !== $('seek')) $('seek').value = Math.round(play.p * 1000);
+  drawProfile(s);
+}
+let profCache = null;
+function drawProfile(s){
+  const cv = $('prof'), dpr = Math.min(2, devicePixelRatio || 1), w = cv.clientWidth, h = cv.clientHeight;
+  if (!w) return;
+  if (cv.width !== Math.round(w * dpr)){ cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); profCache = null; }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!track.hasAlt){ ctx.clearRect(0, 0, w, h); return; }
+  if (!profCache){ // the static filled profile, drawn once per size
+    let lo = Infinity, hi = -Infinity; for (const a of track.alt){ lo = Math.min(lo, a); hi = Math.max(hi, a); }
+    const X = d => d / track.dist * w, Y = a => h - 4 - (a - lo) / ((hi - lo) || 1) * (h - 10);
+    const step = Math.max(1, Math.floor(track.n / (w * 2)));
+    const path = new Path2D(); path.moveTo(0, h);
+    for (let i = 0; i < track.n; i += step) path.lineTo(X(track.D[i]), Y(track.alt[i]));
+    path.lineTo(w, Y(track.alt[track.n - 1])); path.lineTo(w, h); path.closePath();
+    profCache = {path, X, Y, lo, hi};
+  }
+  const {path, X, Y, lo, hi} = profCache, x = X(s.d);
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.fill(path);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, x, h); ctx.clip(); ctx.fillStyle = 'rgba(252,82,0,.55)'; ctx.fill(path); ctx.restore();
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  if (Number.isFinite(s.alt)){ ctx.fillStyle = '#FC5200'; ctx.beginPath(); ctx.arc(x, Y(s.alt), 4.5, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.stroke(); }
+  ctx.fillStyle = 'rgba(229,235,230,.75)'; ctx.font = '11px "Barlow Condensed",sans-serif';
+  ctx.fillText(`${Math.round(hi)} m`, 4, 12); ctx.fillText(`${Math.round(lo)} m`, 4, h - 6);
+}
+
+/* ---------------- loading ---------------- */
+async function loadBuffer(buf, name){
+  const u8 = new Uint8Array(buf, 0, 4);
+  if (u8[0] === 0x50 && u8[1] === 0x4B) buf = (await unzipFirstFit(buf)).buf;
+  track = buildTrack(parseFit(buf), name.replace(/\.(fit|zip)$/i, ''));
+  setPlaying(false); play.p = 0; profCache = null;
+  $('actTitle').textContent = track.name; $('panel').hidden = false;
+  render(0, false);
+  if (mapReady) showTrack();
+  msg(mapReady || map ? '' : '請先按右上角「金鑰」貼上 Mapbox 金鑰。');
+}
+$('fitIn').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  msg('讀取中…');
+  try { await loadBuffer(await f.arrayBuffer(), f.name); }
+  catch (err){ msg(err.message || '無法讀取這個檔案。', true); }
+});
+
+/* ---------------- Garmin relay (same settings as the card page) ---------------- */
+function gmCfg(){ try { const c = JSON.parse(lsGet(GM_KEY) || 'null'); if (c && c.url && c.key) return {base: (/^https?:\/\//i.test(c.url) ? c.url : 'https://' + c.url).trim().replace(/\/+$/, ''), key: c.key.trim()}; } catch {} return null; }
+async function gmFetch(path){
+  const c = gmCfg(); let res;
+  try { res = await fetch(c.base + path, {headers: {'X-Key': c.key}, cache: 'no-store'}); } catch { throw new Error('連不到中繼站。'); }
+  if (!res.ok){ let m = ''; try { m = (await res.json()).message; } catch {} throw new Error(m || `中繼站回應錯誤（HTTP ${res.status}）。`); }
+  return res;
+}
+$('gmBtn').hidden = !gmCfg();
+$('gmBtn').addEventListener('click', async () => {
+  $('gmSheet').hidden = false; $('gmList').innerHTML = ''; $('gmMsg').textContent = '讀取最近 30 天的活動…';
+  try {
+    const list = ((await (await gmFetch('/activities?days=30')).json()).activities || []);
+    $('gmMsg').textContent = list.length ? '點一筆活動載入：' : '最近 30 天沒有活動。';
+    for (const a of list){
+      const li = document.createElement('li'), b = document.createElement('button'), m = document.createElement('span');
+      b.type = 'button'; b.textContent = a.name || '未命名活動'; m.className = 'm';
+      m.textContent = [String(a.start || '').slice(0, 16), a.distance ? fmtNum(a.distance / 1000, 2) + ' km' : ''].filter(Boolean).join(' · ');
+      b.appendChild(m); li.appendChild(b); $('gmList').appendChild(li);
+      b.addEventListener('click', async () => {
+        $('gmMsg').textContent = `下載「${a.name}」中…`;
+        try { await loadBuffer(await (await gmFetch(`/fit/${encodeURIComponent(a.id)}`)).arrayBuffer(), a.name || 'Garmin'); $('gmSheet').hidden = true; }
+        catch (err){ $('gmMsg').textContent = err.message; }
+      });
+    }
+  } catch (err){ $('gmMsg').textContent = err.message; }
+});
+$('gmClose').addEventListener('click', () => { $('gmSheet').hidden = true; });
+
+/* ---------------- token ---------------- */
+function openToken(){ $('tokenIn').value = lsGet(TOKEN_KEY) || ''; $('tokenErr').hidden = true; $('tokenSheet').hidden = false; $('tokenIn').focus(); }
+$('tokenBtn').addEventListener('click', openToken);
+$('tokenCancel').addEventListener('click', () => { $('tokenSheet').hidden = true; });
+$('tokenEye').addEventListener('click', () => {
+  const show = $('tokenIn').type === 'password'; $('tokenIn').type = show ? 'text' : 'password';
+  $('tokenEye').setAttribute('aria-pressed', show); $('eyeOn').hidden = show; $('eyeOff').hidden = !show;
+});
+$('tokenSave').addEventListener('click', () => {
+  const t = $('tokenIn').value.trim();
+  if (!/^pk\.[\w-]+\.[\w-]+$/.test(t)){ $('tokenErr').textContent = '格式不對：請貼上 pk. 開頭的公開金鑰（不要用 sk. 開頭的秘密金鑰）。'; $('tokenErr').hidden = false; return; }
+  const changed = lsGet(TOKEN_KEY) !== t; lsSet(TOKEN_KEY, t); $('tokenSheet').hidden = true;
+  if (map && changed){ location.reload(); return; } // a new token needs a fresh map
+  initMap(t); msg(track ? '' : '金鑰已儲存。按「載入 .fit」選擇活動檔。');
+});
+
+/* ---------------- controls ---------------- */
+$('playBtn').addEventListener('click', () => { if (track) setPlaying(!play.on); });
+$('seek').addEventListener('input', e => { if (track){ setPlaying(false); seekTo(+e.target.value / 1000); } });
+$('prof').addEventListener('pointerdown', e => { if (!track) return; const r = $('prof').getBoundingClientRect(); setPlaying(false); const d = (e.clientX - r.left) / r.width * track.dist; seekTo(track.tt[seekIdx(track.D, d)] / track.total); });
+document.addEventListener('keydown', e => { if (e.code === 'Space' && track && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(e.target.tagName)){ e.preventDefault(); setPlaying(!play.on); } });
+addEventListener('resize', () => { profCache = null; if (track) render(0, false); });
+
+/* ---------------- boot ---------------- */
+window.Replay = {buildTrack, stateAtTime, pointAtDist, loadBuffer, get track(){ return track; }, get play(){ return play; }, version: APP_VERSION};
+const saved = lsGet(TOKEN_KEY);
+if (saved){ initMap(saved); msg('按「載入 .fit」選擇活動檔' + (gmCfg() ? '，或「從 Garmin 抓取」。' : '。')); }
+else openToken();
+</script>
+</body>
+</html>

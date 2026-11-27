@@ -244,9 +244,8 @@ input[type=url],input[type=password],.pw input{font:15px var(--ui);padding:9px 1
       </div>
       <div class="group">
         <h3>對齊與均分</h3>
-        <div class="seg" id="alignToSeg"><button type="button" data-v="sel">對齊選取的物件</button><button type="button" data-v="canvas">對齊畫布</button></div>
         <div class="row"><button id="selectAll" class="btn small" type="button">全選</button></div>
-        <p class="hint">用預覽下方的按鈕對齊。只選一個物件時一定對齊畫布，選多個時依照上面的設定。對齊畫布時會保留一點邊距。「均分」在「對齊選取的物件」模式要選 3 個以上，在「對齊畫布」模式 2 個以上即可。</p>
+        <p class="hint">先選 2 個以上的物件，再用預覽下方的按鈕。對齊是以選取物件本身為基準：靠左＝對齊最左邊那個、靠右＝對齊最右邊那個、靠上／靠下同理，置中＝對齊這群物件的中線。「均分」要選 3 個以上：最外側的兩個不動，中間的物件平均分配間距。</p>
         <p class="hint">多選方式：手機點「多選」後逐一點物件；電腦按住 Shift 或 Ctrl 點選，或按 Ctrl+A 全選。</p>
       </div>
       <div class="group">
@@ -688,7 +687,7 @@ const DEF = {
   size:'story', preset:'stack', lang:'en', timeFmt:'colon', font:'barlow',
   text:'#FFFFFF', labelAlpha:0.8, line:'#FC5200', lineW:8, dots:false, shadow:false,
   showRoute:true, showElev:false, showDate:false, title:'', footer:'',
-  bg:'transparent', bgColor:'#111111', dim:0.2, alignTo:'sel', movingMode:'auto',
+  bg:'transparent', bgColor:'#111111', dim:0.2, movingMode:'auto',
   enabled:{run:['distance','pace','moving'], ride:['distance','gain','moving','speed','power','calories']},
   order: STATS.map(s => s.k)
 };
@@ -1062,25 +1061,23 @@ function scaleSel(f){
   scheduleRender();
 }
 
-/* align & distribute, like PowerPoint: one item aligns to the canvas; several align to each other unless set to canvas */
-const ALIGN_MARGIN = 64; // canvas edge inset, in 1080-wide units
+/* align & distribute the selected objects against each other, like PowerPoint's "align selected objects":
+   the reference is the selection's own outer edges (leftmost left, rightmost right, topmost top, bottom-most bottom),
+   never the canvas. Align needs 2+ objects; distribute needs 3+ (the two outermost stay put, the gaps between all become equal). */
 function alignSel(a){
-  const W = cv.width, H = cv.height, m = ALIGN_MARGIN * W / 1080;
+  const W = cv.width, H = cv.height;
   const bx = Object.fromEntries(hits.map(h => [h.id, h.b]));
   const items = selIds().filter(id => bx[id]).map(id => ({id, b: bx[id]}));
-  if (!items.length) return;
-  const useCanvas = items.length === 1 || S.alignTo === 'canvas';
-  const [L, T, R, B] = useCanvas ? [m, m, W - m, H - m] : [
-    Math.min(...items.map(i => i.b[0])), Math.min(...items.map(i => i.b[1])),
-    Math.max(...items.map(i => i.b[2])), Math.max(...items.map(i => i.b[3]))];
+  if (items.length < 2) return;
+  const L = Math.min(...items.map(i => i.b[0])), T = Math.min(...items.map(i => i.b[1]));
+  const R = Math.max(...items.map(i => i.b[2])), B = Math.max(...items.map(i => i.b[3]));
   const move = (id, dx, dy) => { els[id] = {...els[id], x: els[id].x + dx / W, y: els[id].y + dy / H}; };
   if (a === 'dh' || a === 'dv'){
-    if (items.length < (useCanvas ? 2 : 3)) return;
+    if (items.length < 3) return;
     const ax = a === 'dh' ? 0 : 1;
     const s = items.slice().sort((p, q) => (p.b[ax] + p.b[ax + 2]) - (q.b[ax] + q.b[ax + 2]));
     const sizes = s.map(i => i.b[ax + 2] - i.b[ax]);
-    const start = useCanvas ? (ax ? T : L) : s[0].b[ax];
-    const end = useCanvas ? (ax ? B : R) : s[s.length - 1].b[ax + 2];
+    const start = ax ? T : L, end = ax ? B : R;
     const gap = (end - start - sizes.reduce((x, y) => x + y, 0)) / (s.length - 1);
     let pos = start;
     s.forEach((it, k) => { const d = pos - it.b[ax]; ax ? move(it.id, 0, d) : move(it.id, d, 0); pos += sizes[k] + gap; });
@@ -1128,10 +1125,9 @@ function updateSelBar(){
     : (multi ? '多選中：點物件加入或移除' : '點一下預覽中的物件，就能拖曳或調整大小');
   $('selMulti').setAttribute('aria-pressed', multi);
   if (show && document.activeElement !== $('selSize')) $('selSize').value = els[ids[0]].s;
-  const toCanvas = n === 1 || S.alignTo === 'canvas';
   document.querySelectorAll('#alignBar button').forEach(b => {
     const dist = b.dataset.a === 'dh' || b.dataset.a === 'dv';
-    b.disabled = dist ? n < (toCanvas ? 2 : 3) : n < 1;
+    b.disabled = n < (dist ? 3 : 2);
   });
 }
 $('selSize').addEventListener('input', e => { const ids = selIds(); if (ids.length) scaleSel(+e.target.value / els[ids[0]].s); });
@@ -1159,7 +1155,7 @@ function seg(id, key, after){
     S[key] = b.dataset.v; after ? after() : changed(true);
   });
 }
-seg('alignToSeg', 'alignTo', () => changed(false)); seg('movingSeg', 'movingMode', () => changed(false)); seg('langSeg', 'lang');seg('timeSeg', 'timeFmt');
+seg('movingSeg', 'movingMode', () => changed(false)); seg('langSeg', 'lang');seg('timeSeg', 'timeFmt');
 seg('sizeSeg', 'size', () => { if (S.size === 'photo' && !photo) status('「照片比例」需要先在「背景」加入照片，目前先用 9:16。'); changed(true); });
 seg('bgSeg', 'bg');
 $('presetGrid').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; S.preset = b.dataset.v; manual = false; updateManualNote(); changed(true); });
@@ -1211,7 +1207,7 @@ $('statList').addEventListener('change', e => {
 
 function syncUI(){
   const pressed = (id, v) => $(id).querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === v));
-  pressed('alignToSeg', S.alignTo); pressed('movingSeg', S.movingMode);
+  pressed('movingSeg', S.movingMode);
   {
     const th = (moveThreshold(act.sport) * 3.6).toFixed(1), climbTxt = onFoot(act.sport) ? `、而且每小時爬升或下降不到 ${CLIMB_MIN * 3600} m` : '';
     const parts = [];
@@ -1335,7 +1331,7 @@ function showSaveSheet(blob){
 $('saveClose').addEventListener('click', () => { $('saveSheet').hidden = true; URL.revokeObjectURL($('saveImg').src); $('saveImg').removeAttribute('src'); });
 
 /* ---------------- Garmin relay (Cloudflare Worker) ---------------- */
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.1';
 const GM_CFG_KEY = 'trace-card-garmin';      // {url, key} — this device only, never in git
 const GM_IMPORTED_KEY = 'trace-card-imported'; // activityIds already loaded
 const GM_IMPORTED_MAX = 2000;
@@ -1504,7 +1500,7 @@ $('appVer').textContent = '運動軌跡卡 v' + APP_VERSION;
 gmSyncSettings();
 
 /* ---------------- boot ---------------- */
-window.TraceCard = {parseFit, buildActivity, setActivity, unzipFirstFit, loadActivityBuffer, version: APP_VERSION, get act(){ return act; }, get els(){ return els; }};
+window.TraceCard = {parseFit, buildActivity, setActivity, unzipFirstFit, loadActivityBuffer, version: APP_VERSION, get act(){ return act; }, get els(){ return els; }, get hits(){ return hits; }};
 prepRoute(); updateManualNote(); changed(true);
 if (document.fonts && document.fonts.ready) document.fonts.ready.then(scheduleRender);
 </script>
